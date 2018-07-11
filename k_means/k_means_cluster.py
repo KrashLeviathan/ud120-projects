@@ -1,6 +1,6 @@
-#!/usr/bin/python 
+#!/usr/bin/python
 
-""" 
+"""
     Skeleton code for k-means clustering mini-project.
 """
 
@@ -40,14 +40,30 @@ def Draw(pred, features, poi, mark_poi=False, name="image.png", f1_name="feature
 
 ### load in the dict of dicts containing all the data on each person in the dataset
 data_dict = pickle.load( open("../final_project/final_project_dataset.pkl", "r") )
-### there's an outlier--remove it! 
+### there's an outlier--remove it!
 data_dict.pop("TOTAL", 0)
 
+# Max and min exercised_stock_options
+valid_stock_options = []
+valid_salaries = []
+for key in data_dict:
+    stock_opt = data_dict[key]["exercised_stock_options"]
+    salary = data_dict[key]["salary"]
+    if stock_opt != "NaN":
+        valid_stock_options.append(stock_opt)
+    if salary != "NaN":
+        valid_salaries.append(salary)
+print "Max exercised_stock_options:",  max(valid_stock_options)
+print "Min exercised_stock_options", min(valid_stock_options)
+print "Max salary:",  max(valid_salaries)
+print "Min salary", min(valid_salaries)
 
-### the input features we want to use 
-### can be any key in the person-level dictionary (salary, director_fees, etc.) 
+
+### the input features we want to use
+### can be any key in the person-level dictionary (salary, director_fees, etc.)
 feature_1 = "salary"
 feature_2 = "exercised_stock_options"
+# feature_3 = "total_payments"
 poi  = "poi"
 features_list = [poi, feature_1, feature_2]
 data = featureFormat(data_dict, features_list )
@@ -55,17 +71,31 @@ poi, finance_features = targetFeatureSplit( data )
 
 
 ### in the "clustering with 3 features" part of the mini-project,
-### you'll want to change this line to 
+### you'll want to change this line to
 ### for f1, f2, _ in finance_features:
 ### (as it's currently written, the line below assumes 2 features)
-for f1, f2 in finance_features:
+for f1, f2  in finance_features:
     plt.scatter( f1, f2 )
 plt.show()
 
 ### cluster here; create predictions of the cluster labels
 ### for the data and store them to a list called pred
+from sklearn.cluster import KMeans
+n_clusters = 2
+kmeans = KMeans(n_clusters=n_clusters)
+print "Number of Clusters:", n_clusters
 
-
+from sklearn.preprocessing import MinMaxScaler
+scaler = MinMaxScaler()
+scaler.fit(finance_features)
+print "Scaler max:", scaler.data_max_
+print "Scaler min:", scaler.data_min_
+print scaler.transform([[200000., 1000000.]])
+scaled_features = scaler.transform(finance_features)
+# kmeans.fit(finance_features)
+kmeans.fit(scaled_features)
+# pred = kmeans.predict(finance_features)
+pred = kmeans.predict(scaled_features)
 
 
 ### rename the "name" parameter when you change the number of features
