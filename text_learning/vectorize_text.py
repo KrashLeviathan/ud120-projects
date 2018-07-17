@@ -67,10 +67,13 @@ for name, from_person in [("sara", from_sara), ("chris", from_chris)]:
             #     extracted_text
             # )
             # cleaned_text = cleaned_text.strip()
-            cleaned_text = extracted_text.replace("sara", "")
-            cleaned_text = extracted_text.replace("shackleton", "")
-            cleaned_text = extracted_text.replace("chris", "")
-            cleaned_text = extracted_text.replace("germani", "")
+            cleaned_text = extracted_text
+            cleaned_text = cleaned_text.replace("sara", "")
+            cleaned_text = cleaned_text.replace("shackleton", "")
+            cleaned_text = cleaned_text.replace("chris", "")
+            cleaned_text = cleaned_text.replace("germani", "")
+            cleaned_text = cleaned_text.replace("sshacklensf", "")
+            cleaned_text = cleaned_text.replace("cgermannsf", "")
 
             ### append the text to word_data
             word_data.append(cleaned_text)
@@ -95,9 +98,11 @@ pickle.dump( from_data, open("your_email_authors.pkl", "w") )
 # stop_words = set(stopwords.words('english'))
 # word_tokens = word_tokenize(word_data[152])
 # filtered_sentence = [w for w in word_tokens if not w in stop_words]
-tfidf = TfidfVectorizer(input='content', stop_words='english', sublinear_tf=True, max_df=0.5)
+tfidf = TfidfVectorizer(input='content', stop_words='english')
 transformed_data = tfidf.fit_transform(word_data)
 feature_names = tfidf.get_feature_names()
 print "Number of feature names:", len(feature_names)
 print "Number they got:", 38757
 print "feature_names[34597]:", feature_names[34597]
+
+print "feature 32134:", feature_names[32134]
