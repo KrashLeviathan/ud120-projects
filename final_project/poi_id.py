@@ -1,11 +1,14 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import sys
+import time
 import pickle
 import pandas
 sys.path.append("../tools/")
 import matplotlib.pyplot as plt
 from numpy import random
+import numpy as np
 
 from feature_format import featureFormat, targetFeatureSplit
 from tester import dump_classifier_and_data
@@ -27,13 +30,77 @@ from sklearn import utils
 import warnings
 warnings.filterwarnings("ignore")
 
+### Print to the stderr stream
+def eprint(*args, **kwargs):
+    try:
+        print(colored(str(*args), "red"), file=sys.stderr, **kwargs)
+    except:
+        print(*args, file=sys.stderr, **kwargs)
 
-param_grid = {
-    "ExtraTreeClassifier": {
-        "criterion": ['gini', 'entropy'],
-        "max_depth": [5, 10, 25, 50, 100, 250, 500, 1000, None],
-        "min_impurity_decrease": [0.0, 0.1, 0.2, 0.5]
+PCA_EXPLAINED_VARIANCE_THRESHOLD = 0.05
+PCA_FEATURE_CONTRIBUTION_THRESHOLD = 0.2
+
+RANDOM_STATE = random.randint(0, 2**32-1)
+
+FEATURE_SELECTION_K = 10
+
+# Experiment with various scoring metrics:
+#     scoring = ['accuracy', 'f1', 'precision', 'recall', 'roc_auc']
+# GRID_SEARCH_SCORING = 'recall'
+GRID_SEARCH_SCORING = ['f1', 'recall', 'precision']
+GRID_SEARCH_FIT = 'f1'
+
+ALGORITHMS = [
+    linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, max_iter=5, tol=None, random_state=RANDOM_STATE),
+    naive_bayes.BernoulliNB(),                                # GOOD
+    neighbors.NearestCentroid(),                              # GOOD
+    linear_model.RidgeClassifier(random_state=RANDOM_STATE),  # GOOD
+    tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE), # GOOD
+    tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
+    svm.LinearSVC(random_state=RANDOM_STATE),
+#    neural_network.MLPClassifier(random_state=RANDOM_STATE),        # VERY SLOW
+#    ensemble.RandomForestClassifier(random_state=RANDOM_STATE),     # QUITE SLOW
+#    svm.SVC(kernel='linear', C = 1.0, random_state=RANDOM_STATE),   # QUITE SLOW
+]
+
+# Defines the parameters that GridSearchCV will use for each algorithm tested
+TREE_TYPE_PARAMS = {
+    "criterion": ['gini', 'entropy'],
+    "max_features": ['auto', None, 10, 5, 2],
+    "max_depth": [5, 10, 25, 50, None],
+    "min_samples_split": [2, 3],
+    "min_samples_leaf": [1, 2],
+    "min_impurity_decrease": [0.0, 0.1, 0.2, 0.5],
+    "class_weight": ['balanced', None]
+}
+SIMPLER_TREE_TYPE_PARAMS = TREE_TYPE_PARAMS.copy()
+SIMPLER_TREE_TYPE_PARAMS.update({
+    "n_estimators": [2, 5, 10],
+    "max_depth": [5, 10, 25]
+})
+PARAM_GRID = {
+    "SGDClassifier": {},
+    "MultinomialNB": {},
+    "BernoulliNB": {
+        "alpha": [1.0, 0.9, 0.5, 0.1, 0.0],
+        "binarize": [None, 0.0, 0.1, 0.5, 0.9, 1.0],
+        "fit_prior": [True, False]
     },
+    "MLPClassifier": {},
+    "NearestCentroid": {
+        "shrink_threshold": [None, 0.1, 0.5, 0.9]
+    },
+    "RandomForestClassifier": SIMPLER_TREE_TYPE_PARAMS,
+    "RidgeClassifier": {
+        "alpha": [1.0, 0.9, 0.5, 0.1, 0.0],
+        "normalize": [False, True],
+        "tol": [0.01, 0.001, 0.0001, 0.00001],
+        "class_weight": [None, 'balanced'],
+        "solver": ['auto', 'svd', 'cholesky', 'lsqr', 'sparse_cg']
+    },
+    "DecisionTreeClassifier": TREE_TYPE_PARAMS,
+    "ExtraTreeClassifier": TREE_TYPE_PARAMS,
+    "SVC": {},
     "LinearSVC": {
         # "loss": ['hinge', 'squared_hinge'],
         "C": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
@@ -41,150 +108,268 @@ param_grid = {
     }
 }
 
+# Used for printing test scores in meaningful colors
 score_color_thresholds = {
     'accuracy': [0.8, 0.6],
     'other': [0.3, 0.2]
 }
 
-def train(algorithm, training_feature_data, training_target_data):
-    algo_name = str(algorithm).split('(')[0]
-    # scoring = ['accuracy', 'f1', 'precision', 'recall', 'roc_auc']
-    # print algorithm.get_params().keys()
-    model = GridSearchCV(algorithm, param_grid=param_grid[algo_name], cv=5, scoring='precision')
-    model.fit(training_feature_data, training_target_data)
-    print "Best Params:", model.best_params_, "\n"
-    return model
-
-def score(model, features_test, labels_test):
-    predictions = model.predict(features_test)
-    results = {}
-    results["accuracy"]  = metrics.accuracy_score(predictions, labels_test)
-    results["f1_score"]  = metrics.f1_score(predictions, labels_test)
-    results["recall"]    = metrics.recall_score(predictions, labels_test)
-    results["precision"] = metrics.precision_score(predictions, labels_test)
-    return results
-
+### Used to print a score (float) in green, yellow, or red based on
+### the score_color_thresholds and given score_type.
 def conditional_color(score, score_type='other'):
     th = score_color_thresholds[score_type]
-    text = str(round(score * 100, 2))
-    if score > th[0]:
+    text = str(round(score * 100, 3))
+    if score >= th[0]:
         return colored(text, 'green')
-    elif score > th[1]:
+    elif score >= th[1]:
         return colored(text, 'yellow')
     else:
         return colored(text, 'red')
 
-def report(clf_type, score):
-    print colored(clf_type, 'white', attrs=['bold'])
-    print "Accuracy: ", conditional_color(score["accuracy"], score_type='accuracy'), " \t", \
+### Prints the model, model parameters, and metrics
+def report(clf, score):
+    print(colored('  Parameters: (' + ''.join(str(x) for x in str(clf).split('(')[1:]), 'white', attrs=['bold']), "\n")
+    print("  Accuracy: ", conditional_color(score["accuracy"], score_type='accuracy'), " \t", \
         "F1 Score: ", conditional_color(score["f1_score"]), " \t", \
         "Recall: ", conditional_color(score["recall"]), "   \t", \
-        "Precision: ", conditional_color(score["precision"])
-    print
+        "Precision: ", conditional_color(score["precision"]))
+    print()
 
-### Task 1: Select what features you'll use.
-### features_list is a list of strings, each of which is a feature name.
-### The first feature must be "poi".
-features_list = [
-    'poi',
-    'salary',
-    'bonus',
-    'exercised_stock_options',
-    'from_poi_to_this_person',
-    'from_this_person_to_poi'
-] # You will need to use more features
+### Uses StratifiedShuffleSplit to test the model against many different
+### train/test dataset combinations. This is necessary due to the small
+### size of the dataset and the imbalanced class distribution.
+### The code was adapted from the tester.py test_classifier method.
+def test_classifier(clf, features, labels, feature_list, folds = 1000):
+    cv = StratifiedShuffleSplit(n_splits=folds, random_state = 42)
+    true_negatives = 0
+    false_negatives = 0
+    true_positives = 0
+    false_positives = 0
 
-### Load the dictionary containing the dataset
-with open("final_project_dataset.pkl", "r") as data_file:
-    data_dict = pickle.load(data_file)
+    for train_idx, test_idx in cv.split(features, labels):
+        features_train = []
+        features_test  = []
+        labels_train   = []
+        labels_test    = []
+        for ii in train_idx:
+            features_train.append( features[ii] )
+            labels_train.append( labels[ii] )
+        for jj in test_idx:
+            features_test.append( features[jj] )
+            labels_test.append( labels[jj] )
 
-### Task 2: Remove outliers
-del data_dict['TOTAL']
+        ### fit the classifier using training set, and test on test set
+        clf.fit(features_train, labels_train)
+        predictions = clf.predict(features_test)
+        for prediction, truth in zip(predictions, labels_test):
+            if prediction == 0 and truth == 0:
+                true_negatives += 1
+            elif prediction == 0 and truth == 1:
+                false_negatives += 1
+            elif prediction == 1 and truth == 0:
+                false_positives += 1
+            elif prediction == 1 and truth == 1:
+                true_positives += 1
+            else:
+                eprint("Warning: Found a predicted label not == 0 or 1.\n",\
+                    "All predictions should take value 0 or 1.\n",\
+                    "Evaluating performance for processed predictions:")
+                break
+    try:
+        total_predictions = true_negatives + false_negatives + false_positives + true_positives
+        algo_metrics = {
+            "accuracy": 1.0*(true_positives + true_negatives)/total_predictions,
+            "precision": 1.0*true_positives/(true_positives+false_positives),
+            "recall": 1.0*true_positives/(true_positives+false_negatives),
+            "f1_score": 2.0 * true_positives/(2*true_positives + false_positives+false_negatives)
+        }
+        return algo_metrics
+    except:
+        eprint("Got a divide by zero when trying out: {}".format(str(clf).split('(')[0]))
+        eprint("Precision or recall may be undefined due to a lack of true positive predicitons.\n")
+        return False
 
-# Exploration
-# for key, value in data_dict.iteritems():
-#     print key
-# print "\nThere are {} people in this dataset. Each has these columns:\n".format(len(data_dict))
-# print data_dict['LAY KENNETH L'], "\n"
+### Uses GridSearchCV to automatically tune the algorithm.
+def train(algorithm, feature_data, target_data, print_best_params=False):
+    algo_name = str(algorithm).split('(')[0]
+    # Experiment with various scoring metrics:
+    #     scoring = ['accuracy', 'f1', 'precision', 'recall', 'roc_auc']
+    # pipe = Pipeline([
+    #     ('scaler', MinMaxScaler()),
+    #     ('reduce_dim', SelectKBest(),
+    #     ('algorithm', algorithm)
+    # ])
+    model = GridSearchCV(algorithm, param_grid=PARAM_GRID[algo_name], cv=5, scoring=GRID_SEARCH_SCORING, refit=GRID_SEARCH_FIT, n_jobs=-1, error_score=0)
+    model.fit(feature_data, target_data)
+    if print_best_params:
+        print("Best params for {}: {}\n".format(colored(algo_name, 'green', attrs=['bold']), model.best_params_))
+    return model
 
-### Task 3: Create new feature(s)
-# TODO ...?
+# Determines which set of scores is better
+def metrics_max(current_best, contender):
+    if contender["precision"] < 0.3 or contender["recall"] < 0.3:
+        return (current_best, False)
+    f1_diff = contender["f1_score"] - current_best["f1_score"]
+    if f1_diff > 0:
+        return (contender, True)
+    else:
+        return (current_best, False)
 
-### Store to my_dataset for easy export below.
-my_dataset = data_dict
+# Experimenting with PCA as a means of feature selection
+def pca_features_list_revision(features, original_feature_list):
+    print(colored("################## PCA AS FEATURE SELECTION ##################\n", "blue"))
+    pca = PCA()
+    pca.fit(features)
 
-### Extract features and labels from dataset for local testing
-data = featureFormat(my_dataset, features_list, sort_keys = True)
-labels, features = targetFeatureSplit(data)
+    # First entry in original_feature_list is 'poi', so remove it
+    ofl_without_poi = original_feature_list[1:]
 
-# plt.plot(features[0], reg.predict(features[0]), color="blue") # Based on regression prediction
-# x_axis = 0
-# y_axis = 1
-# # for feature, target in zip(features, labels):
-# #     plt.scatter(feature, target)
-# plt.xlabel(features_list[x_axis + 1])
-# plt.ylabel(features_list[y_axis + 1])
-# plt.show()
+    new_feature_list_map = {}
+    for index, component in enumerate(pca.components_):
+        if pca.explained_variance_ratio_[index] < PCA_EXPLAINED_VARIANCE_THRESHOLD:
+            print("All other components have explained_variance_ratio_ < {}\n"
+                .format(PCA_EXPLAINED_VARIANCE_THRESHOLD))
+            break
+        print("Component {}:  explained_variance_ratio_ = {:.3f}"
+            .format(index, pca.explained_variance_ratio_[index]))
+        mapped_features = zip(ofl_without_poi, component)
+        mapped_features.sort(key=lambda x: -x[1])
+        for f in mapped_features:
+            if f[1] >= PCA_FEATURE_CONTRIBUTION_THRESHOLD:
+                print("    {}    {:.2f}".format((f[0]).ljust(26), f[1]))
+                new_feature_list_map[f[0]] = 1
+        print()
 
-### Task 4: Try a varity of classifiers
-### Task 5: Tune your classifier to achieve better than .3 precision and recall
-### using our testing script.
-# scaler = MinMaxScaler()
-# scaler.fit(features)
-# print "Scaler max:", scaler.data_max_
-# print "Scaler min:", scaler.data_min_
-# scaled_features = scaler.transform(features)
+    # Add 'poi' to the start of the list again
+    return (['poi'] + new_feature_list_map.keys(), pca)
 
-random_state = random.randint(0, 2**32-1)
-# random_state = 3753554380 # 89, 50, 50, 50
-# random_state = 1328639293 # 94, 66, 100, 50
-print "Random State Int:", random_state, "\n"
-features_train, features_test, labels_train, labels_test = \
-    train_test_split(features, labels, test_size=0.3, random_state=random_state)
-# sss = StratifiedShuffleSplit(n_splits=3, test_size=0.25)
-# for train_idx, test_idx in sss.split(features, labels):
-#     features_train = []
-#     features_test  = []
-#     labels_train   = []
-#     labels_test    = []
-#
-#     for ii in train_idx:
-#         features_train.append( features[ii] )
-#         labels_train.append( labels[ii] )
-#     for jj in test_idx:
-#         features_test.append( features[jj] )
-#         labels_test.append( labels[jj] )
-#
-#     algorithm = svm.LinearSVC()
-#     clf = train(algorithm, features_train, labels_train)
-#     score_metrics = score(clf, features_test, labels_test)
-#     report((str(algorithm).split('(')[0]), score_metrics)
+# Using SelectKBest for feature selection
+def selectkbest_features_list_revision(features, labels, features_list):
+    print(colored("################## SELECT {} BEST FEATURES ##################\n".format(FEATURE_SELECTION_K), "blue"))
+    selector = SelectKBest(f_classif, k=FEATURE_SELECTION_K)
+    selector.fit(features, labels)
 
-# pca = RandomizedPCA(n_components=n_components, whiten=True).fit(X_train)
-# n_components = 2
-# pca = PCA(svd_solver='randomized', n_components=n_components, whiten=True).fit(features_train)
-# X_train_pca = pca.transform(features_train)
-# X_test_pca = pca.transform(features_test)
-#
-# for i in range(n_components):
-#     print "pca.explained_variance_ratio_[{}]".format(i)
-#     print pca.explained_variance_ratio_[i]
-# print pca.components_[0]
+    mapped_scores = zip(features_list[1:], selector.scores_)
+    mapped_scores.sort(key=lambda x: -x[1])
+    for index, f in enumerate(mapped_scores):
+        feature_name = colored(f[0].ljust(26), "green") if (index < FEATURE_SELECTION_K) else f[0].ljust(26)
+        print("{}:  score = {:.3f}"
+            .format(feature_name, f[1]))
+    print()
 
-algorithm = tree.ExtraTreeClassifier(random_state=random_state)
-# algorithm = svm.LinearSVC(random_state=random_state)
-cv = train(algorithm, features_train, labels_train)
-clf = cv.best_estimator_
-score_metrics = score(clf, features_test, labels_test)
-report(str(clf), score_metrics)
-# report((str(algorithm).split('(')[0]), score_metrics)
+    # Add 'poi' to the start of the list again
+    new_features_list = list(zip(*mapped_scores)[0][:FEATURE_SELECTION_K])
+    return (['poi'] + new_features_list, selector)
 
-# for i, f in enumerate(clf.feature_importances_):
-#     if f > 0.2: print i, ':', f, ':', vectorizer.get_feature_names()[i]
+def main():
+    # Print random state that will be used in all calculations
+    # TODO: Perhaps it's possible to improve later by choosing the best random_state?
+    print("\nRandom State: {}\n".format(RANDOM_STATE))
 
-### Task 6: Dump your classifier, dataset, and features_list so anyone can
-### check your results. You do not need to change anything below, but make sure
-### that the version of poi_id.py that you submit can be run on its own and
-### generates the necessary .pkl files for validating your results.
+    ### Task 1: Select what features you'll use.
+    ### features_list is a list of strings, each of which is a feature name.
+    ### The first feature must be "poi".
+    poi_label = ['poi']
+    financial_features = ['salary', 'deferral_payments', 'total_payments', 'loan_advances', 'bonus', 'restricted_stock_deferred', 'deferred_income', 'total_stock_value', 'expenses', 'exercised_stock_options', 'other', 'long_term_incentive', 'restricted_stock', 'director_fees']
+    email_features = ['to_messages', 'from_poi_to_this_person', 'from_messages', 'from_this_person_to_poi', 'shared_receipt_with_poi']
+    # Automated feature selection will happen later, so for now we
+    # cast a wide net.
+    features_list = poi_label + financial_features + email_features
+    # features_list = [
+    #     'poi',
+    #     'salary',
+    #     'bonus',
+    #     'exercised_stock_options',
+    #     'from_poi_to_this_person',
+    #     'from_this_person_to_poi'
+    # ]
+    print("Original feature list before feature selection:  (", len(features_list), "features )\n", features_list, "\n")
 
-dump_classifier_and_data(clf, my_dataset, features_list)
+    ### Load the dictionary containing the dataset
+    with open("final_project_dataset.pkl", "r") as data_file:
+        data_dict = pickle.load(data_file)
+
+    ### Task 2: Remove outliers
+    # This was a row in the dataset totaling all other rows, so we can discard
+    del data_dict['TOTAL']
+
+    ### Task 3: Create new feature(s)
+    # TODO
+
+    ### Store to my_dataset for easy export below.
+    my_dataset = data_dict
+
+    ### Extract features and labels from dataset for local testing
+    data = featureFormat(my_dataset, features_list, sort_keys = True)
+    labels, features = targetFeatureSplit(data)
+
+    # Scaling
+    # TODO: Pipeline this stuff!
+    scaler = MinMaxScaler()
+    features = scaler.fit_transform(features)
+
+    # Feature Selection
+    # features_list, pca = pca_features_list_revision(features, features_list)
+    features_list, selector = selectkbest_features_list_revision(features, labels, features_list)
+
+    print("Feature list after selection:  (", len(features_list), "features )\n", features_list, "\n")
+
+    data = featureFormat(my_dataset, features_list, sort_keys = True)
+    labels, features = targetFeatureSplit(data)
+
+    ### Task 4: Try a varity of classifiers
+    # See ALGORITHMS list at top
+
+    ### Task 5: Tune your classifier to achieve better than .3 precision and recall
+    ### using our testing script.
+
+    # Find out which algorithm performs best, and select it
+    best_algo_index = -1
+    best_metrics = { "accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0 }
+    print(colored("################## TESTING VARIOUS CLASSIFERS ##################\n", "blue"))
+    print("GridSearchCV Scoring Metric:", GRID_SEARCH_SCORING)
+    print("GridSearchCV Fit Metric:", GRID_SEARCH_FIT, "\n")
+    for index, algorithm in enumerate(ALGORITHMS):
+        # Use GridSearchCV to tune the algorithm
+        start_time = time.time()
+
+        print(colored(str(algorithm).split('(')[0], 'white', attrs=['bold']))
+
+        clf = train(algorithm, features, labels).best_estimator_
+        algo_metrics = test_classifier(clf, features, labels, features_list)
+
+        elapsed_time = time.time() - start_time
+        print("  Training/evaluation time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
+
+        if algo_metrics != False:
+            report(clf, algo_metrics)
+            best_metrics, is_new_best = metrics_max(best_metrics, algo_metrics)
+            if is_new_best:
+                best_algo_index = index
+        else:
+            eprint("Test classifier failed!")
+
+
+    ### Task 6: Dump your classifier, dataset, and features_list so anyone can
+    ### check your results. You do not need to change anything below, but make sure
+    ### that the version of poi_id.py that you submit can be run on its own and
+    ### generates the necessary .pkl files for validating your results.
+
+    # To make sure we get the best "final" model, train on ALL the data
+    print(colored("################## FINAL MODEL SELECTION ##################\n", "blue"))
+    if best_algo_index < 0:
+        sys.exit(colored("None of the models qualified! None achieved precision >= 0.3 and recall >= 0.3\n", "red"))
+    else:
+        report(ALGORITHMS[best_algo_index], best_metrics)
+        print("Retraining final model for export...")
+        clf = train(ALGORITHMS[best_algo_index], features, labels, print_best_params=True).best_estimator_
+        print("Saving...")
+        dump_classifier_and_data(clf, my_dataset, features_list)
+        print("Done!")
+
+
+if __name__ == '__main__':
+    main_start_time = time.time()
+    main()
+    elapsed_time = time.time() - main_start_time
+    print("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
