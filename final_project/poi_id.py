@@ -35,11 +35,13 @@ PCA_EXPLAINED_VARIANCE_THRESHOLD = 0.05
 PCA_FEATURE_CONTRIBUTION_THRESHOLD = 0.2
 RANDOM_STATE = random.randint(0, 2**32-1)
 FEATURE_SELECTION_K = 3
-VERBOSE = False
+VERBOSE = True
 GRID_SEARCH_SCORING = ['f1', 'recall', 'precision']
 GRID_SEARCH_FIT = 'f1'
 
 # Used for printing test scores in meaningful colors
+# e.g. for 'accuracy'  1.0 to 0.8 is green, 0.8 to 0.6 is yellow,
+# and anything below 0.6 is red
 SCORE_COLOR_THRESHOLDS = {
     'accuracy': [0.8, 0.6],
     'other': [0.3, 0.2]
@@ -303,7 +305,15 @@ def main():
     del data_dict['TOTAL']
 
     ### Task 3: Create new feature(s)
-    # TODO
+    for key, person in data_dict.iteritems():
+        eso = 0 if person['exercised_stock_options'] == 'NaN' else person['exercised_stock_options']
+        srwp = 0 if person['shared_receipt_with_poi'] == 'NaN' else person['shared_receipt_with_poi']
+        person['email_financial_combo'] = eso * srwp
+
+    ### Uncomment below to add the new feature. It didn't seem to help the
+    ### model, so I am not adding it to the feature list.
+    # features_list.append('email_financial_combo')
+    # vprint("Added new feature:  email_financial_combo = exercised_stock_options * shared_receipt_with_poi\n")
 
     ### Store to my_dataset for easy export below.
     my_dataset = data_dict
