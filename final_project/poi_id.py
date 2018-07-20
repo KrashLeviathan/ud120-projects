@@ -52,10 +52,12 @@ GRID_SEARCH_FIT = 'f1'
 
 ALGORITHMS = [
     linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, max_iter=5, tol=None, random_state=RANDOM_STATE),
-    naive_bayes.BernoulliNB(),                                # GOOD
-    neighbors.NearestCentroid(),                              # GOOD
-    linear_model.RidgeClassifier(random_state=RANDOM_STATE),  # GOOD
-    tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE), # GOOD
+    naive_bayes.GaussianNB(),
+    naive_bayes.BernoulliNB(),
+    neighbors.KNeighborsClassifier(),
+    neighbors.NearestCentroid(),
+    linear_model.RidgeClassifier(random_state=RANDOM_STATE),
+    tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE),
     tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
     svm.LinearSVC(random_state=RANDOM_STATE),
 #    neural_network.MLPClassifier(random_state=RANDOM_STATE),        # VERY SLOW
@@ -80,17 +82,21 @@ SIMPLER_TREE_TYPE_PARAMS.update({
 })
 PARAM_GRID = {
     "SGDClassifier": {},
-    "MultinomialNB": {},
+    "GaussianNB": {},
     "BernoulliNB": {
         "alpha": [1.0, 0.9, 0.5, 0.1, 0.0],
         "binarize": [None, 0.0, 0.1, 0.5, 0.9, 1.0],
         "fit_prior": [True, False]
     },
-    "MLPClassifier": {},
+    "KNeighborsClassifier": {
+        "n_neighbors": [1, 2, 5, 10, 20],
+        "weights": ['uniform', 'distance'],
+        "leaf_size": [2, 4, 8, 16, 32, 64],
+        "p": [1, 2]
+    },
     "NearestCentroid": {
         "shrink_threshold": [None, 0.1, 0.5, 0.9]
     },
-    "RandomForestClassifier": SIMPLER_TREE_TYPE_PARAMS,
     "RidgeClassifier": {
         "alpha": [1.0, 0.9, 0.5, 0.1, 0.0],
         "normalize": [False, True],
@@ -100,12 +106,14 @@ PARAM_GRID = {
     },
     "DecisionTreeClassifier": TREE_TYPE_PARAMS,
     "ExtraTreeClassifier": TREE_TYPE_PARAMS,
-    "SVC": {},
     "LinearSVC": {
         # "loss": ['hinge', 'squared_hinge'],
         "C": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
         "tol": [0.01, 0.001, 0.0001, 0.00001]
-    }
+    },
+    "MLPClassifier": {},
+    "RandomForestClassifier": SIMPLER_TREE_TYPE_PARAMS,
+    "SVC": {},
 }
 
 # Used for printing test scores in meaningful colors
@@ -128,7 +136,7 @@ def conditional_color(score, score_type='other'):
 
 ### Prints the model, model parameters, and metrics
 def report(clf, score):
-    print(colored('  Parameters: (' + ''.join(str(x) for x in str(clf).split('(')[1:]), 'white', attrs=['bold']), "\n")
+    print(colored('  Parameters: (' + '('.join(str(x) for x in str(clf).split('(')[1:]), 'white', attrs=['bold']), "\n")
     print("  Accuracy: ", conditional_color(score["accuracy"], score_type='accuracy'), " \t", \
         "F1 Score: ", conditional_color(score["f1_score"]), " \t", \
         "Recall: ", conditional_color(score["recall"]), "   \t", \
@@ -192,14 +200,15 @@ def test_classifier(clf, features, labels, feature_list, folds = 1000):
 ### Uses GridSearchCV to automatically tune the algorithm.
 def train(algorithm, feature_data, target_data, print_best_params=False):
     algo_name = str(algorithm).split('(')[0]
-    # Experiment with various scoring metrics:
-    #     scoring = ['accuracy', 'f1', 'precision', 'recall', 'roc_auc']
-    # pipe = Pipeline([
-    #     ('scaler', MinMaxScaler()),
-    #     ('reduce_dim', SelectKBest(),
-    #     ('algorithm', algorithm)
-    # ])
-    model = GridSearchCV(algorithm, param_grid=PARAM_GRID[algo_name], cv=5, scoring=GRID_SEARCH_SCORING, refit=GRID_SEARCH_FIT, n_jobs=-1, error_score=0)
+    pipe = Pipeline([
+        ('scaler', MinMaxScaler()),
+        ('algorithm', algorithm)
+    ])
+    pipe_params = {}
+    for key, value in PARAM_GRID[algo_name].iteritems():
+        pipe_params['algorithm__' + key] = value
+    # model = GridSearchCV(pipe, param_grid=PARAM_GRID[algo_name], cv=5, scoring=GRID_SEARCH_SCORING, refit=GRID_SEARCH_FIT, n_jobs=1, error_score=0)
+    model = GridSearchCV(pipe, param_grid=pipe_params, cv=5, scoring=GRID_SEARCH_SCORING, refit=GRID_SEARCH_FIT, n_jobs=-1, error_score=0)
     model.fit(feature_data, target_data)
     if print_best_params:
         print("Best params for {}: {}\n".format(colored(algo_name, 'green', attrs=['bold']), model.best_params_))
@@ -275,14 +284,6 @@ def main():
     # Automated feature selection will happen later, so for now we
     # cast a wide net.
     features_list = poi_label + financial_features + email_features
-    # features_list = [
-    #     'poi',
-    #     'salary',
-    #     'bonus',
-    #     'exercised_stock_options',
-    #     'from_poi_to_this_person',
-    #     'from_this_person_to_poi'
-    # ]
     print("Original feature list before feature selection:  (", len(features_list), "features )\n", features_list, "\n")
 
     ### Load the dictionary containing the dataset
@@ -302,18 +303,11 @@ def main():
     ### Extract features and labels from dataset for local testing
     data = featureFormat(my_dataset, features_list, sort_keys = True)
     labels, features = targetFeatureSplit(data)
-
-    # Scaling
-    # TODO: Pipeline this stuff!
-    scaler = MinMaxScaler()
-    features = scaler.fit_transform(features)
-
-    # Feature Selection
+    scaled_features = MinMaxScaler().fit_transform(features)
     # features_list, pca = pca_features_list_revision(features, features_list)
-    features_list, selector = selectkbest_features_list_revision(features, labels, features_list)
-
+    features_list, selector = selectkbest_features_list_revision(scaled_features, labels, features_list)
     print("Feature list after selection:  (", len(features_list), "features )\n", features_list, "\n")
-
+    # Run these two lines again to select ONLY those best features
     data = featureFormat(my_dataset, features_list, sort_keys = True)
     labels, features = targetFeatureSplit(data)
 
@@ -324,28 +318,34 @@ def main():
     ### using our testing script.
 
     # Find out which algorithm performs best, and select it
-    best_algo_index = -1
-    best_metrics = { "accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0 }
     print(colored("################## TESTING VARIOUS CLASSIFERS ##################\n", "blue"))
     print("GridSearchCV Scoring Metric:", GRID_SEARCH_SCORING)
     print("GridSearchCV Fit Metric:", GRID_SEARCH_FIT, "\n")
-    for index, algorithm in enumerate(ALGORITHMS):
-        # Use GridSearchCV to tune the algorithm
-        start_time = time.time()
 
+    best_algo_index = -1
+    best_model = None
+    best_metrics = { "accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0 }
+    for index, algorithm in enumerate(ALGORITHMS):
+        start_time = time.time()
         print(colored(str(algorithm).split('(')[0], 'white', attrs=['bold']))
 
+        # Use GridSearchCV to tune the model
         clf = train(algorithm, features, labels).best_estimator_
+
+        # Evaluate the model, pulling relevant metrics
         algo_metrics = test_classifier(clf, features, labels, features_list)
 
         elapsed_time = time.time() - start_time
         print("  Training/evaluation time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
 
         if algo_metrics != False:
+            # Print metrics
             report(clf, algo_metrics)
+            # Update the "current best" model for output at the end
             best_metrics, is_new_best = metrics_max(best_metrics, algo_metrics)
             if is_new_best:
                 best_algo_index = index
+                best_model = clf
         else:
             eprint("Test classifier failed!")
 
@@ -360,9 +360,9 @@ def main():
     if best_algo_index < 0:
         sys.exit(colored("None of the models qualified! None achieved precision >= 0.3 and recall >= 0.3\n", "red"))
     else:
-        report(ALGORITHMS[best_algo_index], best_metrics)
-        print("Retraining final model for export...")
-        clf = train(ALGORITHMS[best_algo_index], features, labels, print_best_params=True).best_estimator_
+        report(best_model, best_metrics)
+        print("Retraining final model for export...\n")
+        clf = best_model.fit(features, labels)
         print("Saving...")
         dump_classifier_and_data(clf, my_dataset, features_list)
         print("Done!")
