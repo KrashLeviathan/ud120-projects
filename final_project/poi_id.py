@@ -18,7 +18,6 @@ from sklearn.pipeline import Pipeline
 from sklearn.linear_model import SGDClassifier
 from sklearn import svm, naive_bayes, linear_model, tree, ensemble, neighbors, neural_network
 from sklearn.feature_selection import SelectKBest, f_classif
-from sklearn.neural_network import MLPClassifier
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import MinMaxScaler
 
@@ -30,12 +29,13 @@ warnings.filterwarnings("ignore")
 #####################        Start Configuration        #####################
 #############################################################################
 
+
 DATASET_DICTIONARY_FILE = "final_project_dataset.pkl"
 PCA_EXPLAINED_VARIANCE_THRESHOLD = 0.05
 PCA_FEATURE_CONTRIBUTION_THRESHOLD = 0.2
 RANDOM_STATE = random.randint(0, 2**32-1)
 FEATURE_SELECTION_K = 3
-VERBOSE = True
+VERBOSE = False
 GRID_SEARCH_SCORING = ['f1', 'recall', 'precision']
 GRID_SEARCH_FIT = 'f1'
 
@@ -58,9 +58,8 @@ ALGORITHMS = [
     tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE),
     tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
     svm.LinearSVC(random_state=RANDOM_STATE),
-    # neural_network.MLPClassifier(random_state=RANDOM_STATE),        # VERY SLOW
-    # ensemble.RandomForestClassifier(random_state=RANDOM_STATE),     # QUITE SLOW
-    # svm.SVC(kernel='linear', C = 1.0, random_state=RANDOM_STATE),   # QUITE SLOW
+    # ensemble.RandomForestClassifier(random_state=RANDOM_STATE),     # Time: ~00:02:22
+    # svm.SVC(kernel='linear', C = 1.0, random_state=RANDOM_STATE),   # Time: ~00:
 ]
 
 # Defines the parameters that GridSearchCV will use for each algorithm tested
@@ -109,13 +108,17 @@ PARAM_GRID = {
         "C": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
         "tol": [0.01, 0.001, 0.0001, 0.00001]
     },
-    "MLPClassifier": {},
     "RandomForestClassifier": SIMPLER_TREE_TYPE_PARAMS,
     "SVC": {},
 }
 
+POI_LABEL = ['poi']
+FINANCIAL_FEATURES = ['salary', 'deferral_payments', 'total_payments', 'loan_advances', 'bonus', 'restricted_stock_deferred', 'deferred_income', 'total_stock_value', 'expenses', 'exercised_stock_options', 'other', 'long_term_incentive', 'restricted_stock', 'director_fees']
+EMAIL_FEATURES = ['to_messages', 'from_poi_to_this_person', 'from_messages', 'from_this_person_to_poi', 'shared_receipt_with_poi']
+
+
 #############################################################################
-#####################        End Configuration        #######################
+#######        End Configuration / Start Function Definition        #########
 #############################################################################
 
 
@@ -210,7 +213,7 @@ def test_classifier(clf, features, labels, feature_list, folds = 1000):
 def train(algorithm, feature_data, target_data, print_best_params=False):
     algo_name = str(algorithm).split('(')[0]
     pipe = Pipeline([
-        ('scaler', MinMaxScaler()),
+        # ('scaler', MinMaxScaler()),
         ('algorithm', algorithm)
     ])
     pipe_params = {}
@@ -259,7 +262,7 @@ def pca_features_list_revision(features, original_feature_list):
         vprint()
 
     # Add 'poi' to the start of the list again
-    return (['poi'] + new_feature_list_map.keys(), pca)
+    return (POI_LABEL + new_feature_list_map.keys(), pca)
 
 ### Using SelectKBest for feature selection
 def selectkbest_features_list_revision(features, labels, features_list):
@@ -277,68 +280,11 @@ def selectkbest_features_list_revision(features, labels, features_list):
 
     # Add 'poi' to the start of the list again
     new_features_list = list(zip(*mapped_scores)[0][:FEATURE_SELECTION_K])
-    return (['poi'] + new_features_list, selector)
+    return (POI_LABEL + new_features_list, selector)
 
-### Main Method
-def main():
-    # Print random state that will be used in all calculations
-    # TODO: Perhaps it's possible to improve later by choosing the best random_state?
-    vprint("\nRandom State: {}\n".format(RANDOM_STATE))
-
-    ### Task 1: Select what features you'll use.
-    ### features_list is a list of strings, each of which is a feature name.
-    ### The first feature must be "poi".
-    poi_label = ['poi']
-    financial_features = ['salary', 'deferral_payments', 'total_payments', 'loan_advances', 'bonus', 'restricted_stock_deferred', 'deferred_income', 'total_stock_value', 'expenses', 'exercised_stock_options', 'other', 'long_term_incentive', 'restricted_stock', 'director_fees']
-    email_features = ['to_messages', 'from_poi_to_this_person', 'from_messages', 'from_this_person_to_poi', 'shared_receipt_with_poi']
-    # Automated feature selection will happen later, so for now we
-    # cast a wide net.
-    features_list = poi_label + financial_features + email_features
-    vprint("Original feature list before feature selection:  (", len(features_list), "features )\n", features_list, "\n")
-
-    ### Load the dictionary containing the dataset
-    with open(DATASET_DICTIONARY_FILE, "r") as data_file:
-        data_dict = pickle.load(data_file)
-
-    ### Task 2: Remove outliers
-    # This was a row in the dataset totaling all other rows, so we can discard
-    del data_dict['TOTAL']
-
-    ### Task 3: Create new feature(s)
-    for key, person in data_dict.iteritems():
-        eso = 0 if person['exercised_stock_options'] == 'NaN' else person['exercised_stock_options']
-        srwp = 0 if person['shared_receipt_with_poi'] == 'NaN' else person['shared_receipt_with_poi']
-        person['email_financial_combo'] = eso * srwp
-
-    ### Uncomment below to add the new feature. It didn't seem to help the
-    ### model, so I am not adding it to the feature list.
-    # features_list.append('email_financial_combo')
-    # vprint("Added new feature:  email_financial_combo = exercised_stock_options * shared_receipt_with_poi\n")
-
-    ### Store to my_dataset for easy export below.
-    my_dataset = data_dict
-
-    ### Extract features and labels from dataset for local testing
-    data = featureFormat(my_dataset, features_list, sort_keys = True)
-    labels, features = targetFeatureSplit(data)
-    scaled_features = MinMaxScaler().fit_transform(features)
-    # features_list, pca = pca_features_list_revision(features, features_list)
-    features_list, selector = selectkbest_features_list_revision(scaled_features, labels, features_list)
-    # Run these two lines again to select ONLY those best features
-    data = featureFormat(my_dataset, features_list, sort_keys = True)
-    labels, features = targetFeatureSplit(data)
-
-    ### Task 4: Try a varity of classifiers
-    # See ALGORITHMS list at top
-
-    ### Task 5: Tune your classifier to achieve better than .3 precision and recall
-    ### using our testing script.
-
-    # Find out which algorithm performs best, and select it
-    vprint(colored("################## TESTING VARIOUS CLASSIFERS ##################\n", "blue"))
-    vprint("GridSearchCV Scoring Metric:", GRID_SEARCH_SCORING)
-    vprint("GridSearchCV Fit Metric:", GRID_SEARCH_FIT, "\n")
-
+### Tunes, trains, and evaluates each model based on the precision, recall,
+### and f1 scores. Returns the best model that meets the specifications.
+def find_best_classifier(features, labels, features_list):
     best_algo_index = -1
     best_model = None
     best_metrics = { "accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0 }
@@ -366,6 +312,91 @@ def main():
         else:
             eprint("Test classifier failed!")
 
+    return (best_algo_index, best_model, best_metrics)
+
+### Main Method
+def main():
+    # Print random state that will be used in all calculations
+    # TODO: Perhaps it's possible to improve later by choosing the best random_state?
+    vprint("\nRandom State: {}\n".format(RANDOM_STATE))
+
+    ### Task 1: Select what features you'll use.
+    ### features_list is a list of strings, each of which is a feature name.
+    ### The first feature must be "poi".
+    # Automated feature selection will happen later, so for now we
+    # cast a wide net.
+    features_list = POI_LABEL + FINANCIAL_FEATURES + EMAIL_FEATURES
+    vprint("Original feature list before feature selection:  ({} features)\n{}\n".format(len(features_list), features_list))
+
+    ### Load the dictionary containing the dataset
+    with open(DATASET_DICTIONARY_FILE, "r") as data_file:
+        data_dict = pickle.load(data_file)
+
+    ### Task 2: Remove outliers
+    # This was a row in the dataset totaling all other rows, so we can discard
+    vprint("Total number of rows:", len(data_dict))
+    vprint("Removing TOTAL row outlier...")
+    del data_dict['TOTAL']
+
+    vprint("Total number of rows:", len(data_dict))
+    num_poi = sum(data_dict[key]['poi'] for key in data_dict)
+    num_non = len(data_dict) - num_poi
+    vprint("Number of POI: {} ({:.1f}%)    Number of non-POI: {} ({:.1f}%)".format(
+        num_poi,
+        100 * float(num_poi)/len(data_dict),
+        num_non,
+        100 * float(num_non)/len(data_dict)))
+    vprint()
+
+    ### Task 3: Create new feature(s)
+    # Given that the financial features and email features represent two different
+    # types of data, I thought they may make a good combination for a new feature.
+    # The choices for that combination were made by taking the "most significant"
+    # financial and email features as reported by the SelectKBest algorithm.
+    for key, person in data_dict.iteritems():
+        eso = 0 if person['exercised_stock_options'] == 'NaN' else person['exercised_stock_options']
+        srwp = 0 if person['shared_receipt_with_poi'] == 'NaN' else person['shared_receipt_with_poi']
+        person['email_financial_combo'] = eso * srwp
+    features_list.append('email_financial_combo')
+    vprint("Added new feature:  email_financial_combo = exercised_stock_options * shared_receipt_with_poi\n")
+
+    ### Store to my_dataset for easy export below.
+    my_dataset = data_dict
+
+    ### Extract features and labels from dataset for local testing
+    data = featureFormat(my_dataset, features_list, sort_keys = True)
+    labels, features = targetFeatureSplit(data)
+    # I tried using PCA as a means of feature selection, but it didn't work as
+    # well as SelectKBest, so it's been commented out.
+    # scaled_features = MinMaxScaler().fit_transform(features)
+    # features_list, pca = pca_features_list_revision(scaled_features, features_list)
+    features_list, selector = selectkbest_features_list_revision(features, labels, features_list)
+    # Run these two lines again to select ONLY those best features
+    data = featureFormat(my_dataset, features_list, sort_keys = True)
+    labels, features = targetFeatureSplit(data)
+    vprint("Removing any row containing 0 for all {} selected features".format(FEATURE_SELECTION_K))
+    vprint("Total number of rows after feature selection:", len(data))
+    num_poi = sum(is_poi for is_poi in labels)
+    num_non = len(labels) - num_poi
+    vprint("Number of POI: {} ({:.1f}%)    Number of non-POI: {} ({:.1f}%)".format(
+        num_poi,
+        100 * float(num_poi)/len(labels),
+        num_non,
+        100 * float(num_non)/len(labels)))
+    vprint()
+
+    ### Task 4: Try a varity of classifiers
+    # See ALGORITHMS list at top
+
+    ### Task 5: Tune your classifier to achieve better than .3 precision and recall
+    ### using our testing script.
+
+    # Find out which algorithm performs best, and select it
+    vprint(colored("################## TESTING VARIOUS CLASSIFERS ##################\n", "blue"))
+    vprint("GridSearchCV Scoring Metric:", GRID_SEARCH_SCORING)
+    vprint("GridSearchCV Fit Metric:", GRID_SEARCH_FIT, "\n")
+
+    best_algo_index, best_model, best_metrics = find_best_classifier(features, labels, features_list)
 
     ### Task 6: Dump your classifier, dataset, and features_list so anyone can
     ### check your results. You do not need to change anything below, but make sure
@@ -390,6 +421,7 @@ def main():
 ###########################################################################
 #########        End of Function Definition / Start Script        #########
 ###########################################################################
+
 
 if __name__ == '__main__':
     main_start_time = time.time()
