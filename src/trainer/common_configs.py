@@ -1,5 +1,3 @@
-VERBOSE = False
-
 # DATASET_DICTIONARY_FILE = "resources/dataset.pkl"
 
 EXPORT_LOG_FILENAME = "log.txt"

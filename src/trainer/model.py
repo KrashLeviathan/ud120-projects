@@ -4,6 +4,7 @@ from __future__ import print_function
 import os
 import sys
 import time
+import datetime
 import pickle
 import re
 from numpy import random
@@ -25,7 +26,12 @@ from src.feature_format import feature_format
 
 import common_configs as CONFIG
 
+##########################################################
+###   These two configs are set in the task.py file:   ###
+##########################################################
+VERBOSE = False
 OUTPUT_DIR = './output'
+##########################################################
 
 PCA_EXPLAINED_VARIANCE_THRESHOLD = 0.05
 PCA_FEATURE_CONTRIBUTION_THRESHOLD = 0.2
@@ -145,7 +151,7 @@ def vprint(*args, **kwargs):
             print(*cleaned_args, file=output, **kwargs)
     except:
         pass
-    if CONFIG.VERBOSE:
+    if VERBOSE:
         print(*args, **kwargs)
 
 
@@ -330,6 +336,7 @@ def find_best_classifier(features, labels, features_list):
     best_metrics = {"accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0}
     for index, algorithm in enumerate(ALGORITHMS):
         my_start_time = time.time()
+        aprint(datetime.datetime.now().strftime('Starting time: %Y-%m-%d %H:%M:%S'))
         aprint(colored(str(algorithm).split('(')[0], 'white', attrs=['bold']))
 
         # Use GridSearchCV to tune the model
@@ -481,6 +488,7 @@ def train_and_evaluate(train_data_path):
     aprint(colored("\n################## FINAL MODEL SELECTION ##################\n", "blue"))
     if best_algo_index < 0:
         elapsed_time = time.time() - main_start_time
+        print(datetime.datetime.now().strftime('Ending time: %Y-%m-%d %H:%M:%S'))
         aprint("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
         sys.exit(colored("None of the models qualified! None achieved precision >= 0.3 and recall >= 0.3\n", "red"))
     else:
@@ -496,6 +504,7 @@ def train_and_evaluate(train_data_path):
         aprint("Done!")
 
         elapsed_time = time.time() - main_start_time
+        print(datetime.datetime.now().strftime('Ending time: %Y-%m-%d %H:%M:%S'))
         aprint("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
 
 
