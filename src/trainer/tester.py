@@ -79,7 +79,7 @@ def test_classifier(clf, dataset, feature_list, folds=1000):
 
 CLF_PICKLE_FILENAME = "output/model.pkl"
 DATASET_PICKLE_FILENAME = "output/dataset.pkl"
-FEATURE_LIST_FILENAME = "output/feature_list.pkl"
+FEATURE_LIST_FILENAME = "output/feature_list.txt.pkl"
 
 
 def dump_classifier_and_data(clf, dataset, feature_list):

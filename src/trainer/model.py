@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 from __future__ import print_function
+import os
 import sys
 import time
 import pickle
@@ -23,6 +24,8 @@ from src.feature_format import feature_format
 #############################################################################
 
 import common_configs as CONFIG
+
+OUTPUT_DIR = './output'
 
 PCA_EXPLAINED_VARIANCE_THRESHOLD = 0.05
 PCA_FEATURE_CONTRIBUTION_THRESHOLD = 0.2
@@ -126,16 +129,22 @@ def decolor(*args):
 ### Always print
 def aprint(*args, **kwargs):
     cleaned_args = decolor(*args)
-    with open(CONFIG.EXPORT_LOG_FILENAME, 'a+') as output:
-        print(*cleaned_args, file=output, **kwargs)
+    try:
+        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME), 'a+') as output:
+            print(*cleaned_args, file=output, **kwargs)
+    except:
+        pass
     print(*args, **kwargs)
 
 
 ### Print if VERBOSE == True
 def vprint(*args, **kwargs):
     cleaned_args = decolor(*args)
-    with open(CONFIG.EXPORT_LOG_FILENAME, 'a+') as output:
-        print(*cleaned_args, file=output, **kwargs)
+    try:
+        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME), 'a+') as output:
+            print(*cleaned_args, file=output, **kwargs)
+    except:
+        pass
     if CONFIG.VERBOSE:
         print(*args, **kwargs)
 
@@ -143,8 +152,11 @@ def vprint(*args, **kwargs):
 ### Print to the stderr stream
 def eprint(*args, **kwargs):
     cleaned_args = decolor(*args)
-    with open(CONFIG.EXPORT_LOG_FILENAME, 'a+') as output:
-        print(*cleaned_args, file=output, **kwargs)
+    try:
+        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME), 'a+') as output:
+            print(*cleaned_args, file=output, **kwargs)
+    except:
+        pass
     try:
         print(colored(str(*args), "red"), file=sys.stderr, **kwargs)
     except:
@@ -345,23 +357,34 @@ def find_best_classifier(features, labels, features_list):
 
 def save_files(clf, dataset, feature_list):
     # Model
-    with open(CONFIG.EXPORT_CLF_FILENAME, "w") as clf_outfile:
-        pickle.dump(clf, clf_outfile)
+    try:
+        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_CLF_FILENAME), "w") as clf_outfile:
+            pickle.dump(clf, clf_outfile)
+    except IOError as e:
+        eprint(e)
 
     # Dataset
-    with open(CONFIG.EXPORT_DATASET_FILENAME, "w") as dataset_outfile:
-        pickle.dump(dataset, dataset_outfile)
+    try:
+        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_DATASET_FILENAME), "w") as dataset_outfile:
+            pickle.dump(dataset, dataset_outfile)
+    except IOError as e:
+        eprint(e)
 
     # Feature List
-    with open("output/feature_list.pkl", "w") as featurelist_pickle:
-        pickle.dump(feature_list, featurelist_pickle)
-    with open(CONFIG.EXPORT_FEATURE_LIST_FILENAME, "w") as featurelist_outfile:
-        for f in feature_list:
-            featurelist_outfile.write(f + "\n")
+    try:
+        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_FEATURE_LIST_FILENAME + ".pkl"), "w") as featurelist_pickle:
+            pickle.dump(feature_list, featurelist_pickle)
+        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_FEATURE_LIST_FILENAME), "w") as featurelist_outfile:
+            for f in feature_list:
+                featurelist_outfile.write(f + "\n")
+    except IOError as e:
+        eprint(e)
 
 
 ### Main Method
-def main():
+def train_and_evaluate(train_data_path):
+    main_start_time = time.time()
+
     # Print random state that will be used in all calculations
     vprint("\nRandom State: {}\n".format(RANDOM_STATE))
 
@@ -375,8 +398,12 @@ def main():
                                                                                          features_list))
 
     ### Load the dictionary containing the dataset
-    with open(CONFIG.DATASET_DICTIONARY_FILE, "r") as data_file:
-        data_dict = pickle.load(data_file)
+    data_dict = {}
+    try:
+        with open(train_data_path, "r") as data_file:
+            data_dict = pickle.load(data_file)
+    except IOError as e:
+        exit(colored(e, 'red'))
 
     ### Task 2: Remove outliers
     # This was a row in the dataset totaling all other rows, so we can discard
@@ -453,16 +480,23 @@ def main():
     # To make sure we get the best "final" model, train on ALL the data
     aprint(colored("\n################## FINAL MODEL SELECTION ##################\n", "blue"))
     if best_algo_index < 0:
+        elapsed_time = time.time() - main_start_time
+        aprint("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
         sys.exit(colored("None of the models qualified! None achieved precision >= 0.3 and recall >= 0.3\n", "red"))
     else:
         aprint(colored(str(ALGORITHMS[best_algo_index]).split('(')[0], 'white', attrs=['bold']))
         report(best_model, best_metrics)
         aprint("\nFinal feature list after selection:  (", len(features_list), "features )\n", features_list, "\n")
+
         aprint("Retraining final model for export...\n")
         clf = best_model.fit(features, labels)
+
         aprint("Saving...")
         save_files(clf, my_dataset, features_list)
         aprint("Done!")
+
+        elapsed_time = time.time() - main_start_time
+        aprint("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
 
 
 ###########################################################################
@@ -472,7 +506,4 @@ def main():
 warnings.filterwarnings("ignore")
 
 if __name__ == '__main__':
-    main_start_time = time.time()
-    main()
-    elapsed_time = time.time() - main_start_time
-    aprint("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
+    train_and_evaluate('./resources/dataset.pkl')
