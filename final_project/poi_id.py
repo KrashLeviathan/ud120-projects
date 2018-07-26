@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import pickle
+import re
 from numpy import random
 from termcolor import colored
 # from sklearn import svm
@@ -27,20 +28,26 @@ from feature_format import feature_format
 #####################        Start Configuration        #####################
 #############################################################################
 
+VERBOSE = False
+EXPORT_TO_GCP = True
+BUCKET_ID = "adept-elf-206419-mlengine"
+GS_PATH_PREFIX = os.path.join('gs://', BUCKET_ID,
+                              datetime.datetime.now().strftime('enron_poi_classifier_%Y%m%d_%H%M%S'))
 
 DATASET_DICTIONARY_FILE = "resources/final_project_dataset.pkl"
 PCA_EXPLAINED_VARIANCE_THRESHOLD = 0.05
 PCA_FEATURE_CONTRIBUTION_THRESHOLD = 0.2
 RANDOM_STATE = random.randint(0, 2 ** 32 - 1)
 FEATURE_SELECTION_K = 3
-VERBOSE = False
 GRID_SEARCH_SCORING = ['f1', 'recall', 'precision']
 GRID_SEARCH_FIT = 'f1'
 
-BUCKET_ID = "adept-elf-206419-mlengine"
+EXPORT_LOG_FILENAME = "output/log.txt"
 EXPORT_CLF_FILENAME = "output/model.pkl"
 EXPORT_DATASET_FILENAME = "output/dataset.pkl"
-EXPORT_FEATURE_LIST_FILENAME = "output/feature_list.pkl"
+EXPORT_FEATURE_LIST_FILENAME = "output/feature_list.txt"
+
+OUTPUT_LOG = open(EXPORT_LOG_FILENAME, 'w')
 
 # Used for printing test scores in meaningful colors
 # e.g. for 'accuracy'  1.0 to 0.8 is green, 0.8 to 0.6 is yellow,
@@ -127,15 +134,32 @@ EMAIL_FEATURES = ['to_messages', 'from_poi_to_this_person', 'from_messages', 'fr
 #######        End Configuration / Start Function Definition        #########
 #############################################################################
 
+def decolor(*args):
+    cleaned_args = []
+    for arg in args:
+        cleaned_args.append(re.sub("\033\\[\\d+m", "", str(arg)))
+    return cleaned_args
+
+
+### Always print
+def aprint(*args, **kwargs):
+    cleaned_args = decolor(*args)
+    print(*cleaned_args, file=OUTPUT_LOG, **kwargs)
+    print(*args, **kwargs)
+
 
 ### Print if VERBOSE == True
-def vprint(*args):
+def vprint(*args, **kwargs):
+    cleaned_args = decolor(*args)
+    print(*cleaned_args, file=OUTPUT_LOG, **kwargs)
     if VERBOSE:
-        print(*args)
+        print(*args, **kwargs)
 
 
 ### Print to the stderr stream
 def eprint(*args, **kwargs):
+    cleaned_args = decolor(*args)
+    print(*cleaned_args, file=OUTPUT_LOG, **kwargs)
     try:
         print(colored(str(*args), "red"), file=sys.stderr, **kwargs)
     except:
@@ -159,10 +183,10 @@ def conditional_color(score, score_type='other'):
 def report(clf, score):
     vprint(colored('  Parameters: (' + '('.join(str(x) for x in str(clf).split('(')[1:]), 'white', attrs=['bold']),
            "\n")
-    print("  Accuracy: ", conditional_color(score["accuracy"], score_type='accuracy'), " \t",
-          "F1 Score: ", conditional_color(score["f1_score"]), " \t",
-          "Recall: ", conditional_color(score["recall"]), "   \t",
-          "Precision: ", conditional_color(score["precision"]))
+    aprint("  Accuracy: ", conditional_color(score["accuracy"], score_type='accuracy'), " \t",
+           "F1 Score: ", conditional_color(score["f1_score"]), " \t",
+           "Recall: ", conditional_color(score["recall"]), "   \t",
+           "Precision: ", conditional_color(score["precision"]))
     vprint()
 
 
@@ -291,7 +315,7 @@ def selectkbest_features_list_revision(features, labels, features_list):
     mapped_scores = zip(features_list[1:], selector.scores_)
     mapped_scores.sort(key=lambda x: -x[1])
     for index, f in enumerate(mapped_scores):
-        feature_name = colored(f[0].ljust(26), "green") if (index < FEATURE_SELECTION_K) else f[0].ljust(26)
+        feature_name = colored(("[*] " + f[0]).ljust(30), "green") if (index < FEATURE_SELECTION_K) else f[0].ljust(30)
         vprint("{}:  score = {:.3f}"
                .format(feature_name, f[1]))
     vprint()
@@ -309,7 +333,7 @@ def find_best_classifier(features, labels, features_list):
     best_metrics = {"accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0}
     for index, algorithm in enumerate(ALGORITHMS):
         my_start_time = time.time()
-        print(colored(str(algorithm).split('(')[0], 'white', attrs=['bold']))
+        aprint(colored(str(algorithm).split('(')[0], 'white', attrs=['bold']))
 
         # Use GridSearchCV to tune the model
         clf = train(algorithm, features, labels).best_estimator_
@@ -318,7 +342,7 @@ def find_best_classifier(features, labels, features_list):
         algo_metrics = test_classifier(clf, features, labels)
 
         my_elapsed_time = time.time() - my_start_time
-        print("  Training/evaluation time:", time.strftime("%H:%M:%S", time.gmtime(my_elapsed_time)))
+        aprint("  Training/evaluation time:", time.strftime("%H:%M:%S", time.gmtime(my_elapsed_time)))
 
         if algo_metrics:
             # Print metrics
@@ -334,26 +358,30 @@ def find_best_classifier(features, labels, features_list):
     return best_algo_index, best_model, best_metrics
 
 
-def export_to_gcp(clf, dataset, feature_list):
+def save_files(clf, dataset, feature_list, should_export):
     # Model
     with open(EXPORT_CLF_FILENAME, "w") as clf_outfile:
         pickle.dump(clf, clf_outfile)
-    gs_path_prefix = os.path.join('gs://', BUCKET_ID,
-                                 datetime.datetime.now().strftime('enron_poi_classifier_%Y%m%d_%H%M%S'))
-    gs_model_path = os.path.join(gs_path_prefix, 'model.pkl')
-    subprocess.check_call(['gsutil', 'cp', EXPORT_CLF_FILENAME, gs_model_path], stderr=sys.stdout)
+    if should_export:
+        gs_model_path = os.path.join(GS_PATH_PREFIX, 'model.pkl')
+        subprocess.check_call(['gsutil', 'cp', EXPORT_CLF_FILENAME, gs_model_path], stderr=sys.stdout)
 
     # Dataset
     with open(EXPORT_DATASET_FILENAME, "w") as dataset_outfile:
         pickle.dump(dataset, dataset_outfile)
-    gs_dataset_path = os.path.join(gs_path_prefix, 'dataset.pkl')
-    subprocess.check_call(['gsutil', 'cp', EXPORT_DATASET_FILENAME, gs_dataset_path], stderr=sys.stdout)
+    if should_export:
+        gs_dataset_path = os.path.join(GS_PATH_PREFIX, 'dataset.pkl')
+        subprocess.check_call(['gsutil', 'cp', EXPORT_DATASET_FILENAME, gs_dataset_path], stderr=sys.stdout)
 
     # Feature List
+    with open("output/feature_list.pkl", "w") as featurelist_pickle:
+        pickle.dump(feature_list, featurelist_pickle)
     with open(EXPORT_FEATURE_LIST_FILENAME, "w") as featurelist_outfile:
-        pickle.dump(feature_list, featurelist_outfile)
-    gs_feature_list_path = os.path.join(gs_path_prefix, 'feature_list.pkl')
-    subprocess.check_call(['gsutil', 'cp', EXPORT_FEATURE_LIST_FILENAME, gs_feature_list_path], stderr=sys.stdout)
+        for f in feature_list:
+            featurelist_outfile.write(f + "\n")
+    if should_export:
+        gs_feature_list_path = os.path.join(GS_PATH_PREFIX, 'feature_list.txt')
+        subprocess.check_call(['gsutil', 'cp', EXPORT_FEATURE_LIST_FILENAME, gs_feature_list_path], stderr=sys.stdout)
 
 
 ### Main Method
@@ -447,18 +475,18 @@ def main():
     ### generates the necessary .pkl files for validating your results.
 
     # To make sure we get the best "final" model, train on ALL the data
-    print(colored("\n################## FINAL MODEL SELECTION ##################\n", "blue"))
+    aprint(colored("\n################## FINAL MODEL SELECTION ##################\n", "blue"))
     if best_algo_index < 0:
         sys.exit(colored("None of the models qualified! None achieved precision >= 0.3 and recall >= 0.3\n", "red"))
     else:
-        print(colored(str(ALGORITHMS[best_algo_index]).split('(')[0], 'white', attrs=['bold']))
+        aprint(colored(str(ALGORITHMS[best_algo_index]).split('(')[0], 'white', attrs=['bold']))
         report(best_model, best_metrics)
-        print("\nFinal feature list after selection:  (", len(features_list), "features )\n", features_list, "\n")
-        print("Retraining final model for export...\n")
+        aprint("\nFinal feature list after selection:  (", len(features_list), "features )\n", features_list, "\n")
+        aprint("Retraining final model for export...\n")
         clf = best_model.fit(features, labels)
-        print("Saving...")
-        export_to_gcp(clf, my_dataset, features_list)
-        print("Done!")
+        aprint("Saving...")
+        save_files(clf, my_dataset, features_list, EXPORT_TO_GCP)
+        aprint("Done!")
 
 
 ###########################################################################
@@ -470,4 +498,9 @@ if __name__ == '__main__':
     main_start_time = time.time()
     main()
     elapsed_time = time.time() - main_start_time
-    print("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
+    aprint("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
+
+OUTPUT_LOG.close()
+if EXPORT_TO_GCP:
+    gs_log_path = os.path.join(GS_PATH_PREFIX, 'log.txt')
+    subprocess.check_call(['gsutil', 'cp', EXPORT_LOG_FILENAME, gs_log_path], stderr=sys.stdout)
