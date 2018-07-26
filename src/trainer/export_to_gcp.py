@@ -15,23 +15,32 @@ import common_configs as CONFIG
 BUCKET_ID = "adept-elf-206419-mlengine"
 GS_PATH_PREFIX = os.path.join('gs://', BUCKET_ID,
                               datetime.datetime.now().strftime('enron_poi_classifier_%Y%m%d_%H%M%S'))
+OUTPUT_DIR = './output'
 
 
 def main():
     print("Uploading the trained model, dataset, feature list, and log to {}\n".format(GS_PATH_PREFIX))
 
-    gs_model_path = os.path.join(GS_PATH_PREFIX, 'model.pkl')
-    subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_CLF_FILENAME, gs_model_path], stderr=sys.stdout)
+    try:
+        gs_model_path = os.path.join(GS_PATH_PREFIX, 'model.pkl')
+        subprocess.check_call(['gsutil', 'cp', os.path.join(OUTPUT_DIR, CONFIG.EXPORT_CLF_FILENAME), gs_model_path],
+                              stderr=sys.stdout)
 
-    gs_dataset_path = os.path.join(GS_PATH_PREFIX, 'dataset.pkl')
-    subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_DATASET_FILENAME, gs_dataset_path], stderr=sys.stdout)
+        gs_dataset_path = os.path.join(GS_PATH_PREFIX, 'dataset.pkl')
+        subprocess.check_call(
+            ['gsutil', 'cp', os.path.join(OUTPUT_DIR, CONFIG.EXPORT_DATASET_FILENAME), gs_dataset_path],
+            stderr=sys.stdout)
 
-    gs_feature_list_path = os.path.join(GS_PATH_PREFIX, 'feature_list.txt')
-    subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_FEATURE_LIST_FILENAME, gs_feature_list_path],
-                          stderr=sys.stdout)
+        gs_feature_list_path = os.path.join(GS_PATH_PREFIX, 'feature_list.txt')
+        subprocess.check_call(
+            ['gsutil', 'cp', os.path.join(OUTPUT_DIR, CONFIG.EXPORT_FEATURE_LIST_FILENAME), gs_feature_list_path],
+            stderr=sys.stdout)
 
-    gs_log_path = os.path.join(GS_PATH_PREFIX, 'log.txt')
-    subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_LOG_FILENAME, gs_log_path], stderr=sys.stdout)
+        gs_log_path = os.path.join(GS_PATH_PREFIX, 'log.txt')
+        subprocess.check_call(['gsutil', 'cp', os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME), gs_log_path],
+                              stderr=sys.stdout)
+    except Exception as e:
+        print(e)
 
 
 if __name__ == '__main__':

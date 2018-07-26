@@ -2,12 +2,19 @@
 
 ### Getting started
 
-#### 1. [Install Anaconda](https://www.anaconda.com/download/)
-
-#### 2. [Create an environment](https://conda.io/docs/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands)
+#### 1. Clone the project
 
 ```bash
-conda create -n ud120 python=2.7 pip
+git clone https://github.com/KrashLeviathan/ud120-projects.git
+```
+
+#### 1. [Install Anaconda](https://www.anaconda.com/download/)
+
+#### 2. [Create thegi environment](https://conda.io/docs/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands)
+
+```bash
+conda create --yes -n ud120 python=2.7 \
+    pip numpy termcolor sklearn scipy
 source activate ud120
 pip install --upgrade pip
 ```
