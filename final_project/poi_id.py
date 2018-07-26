@@ -1,8 +1,6 @@
 #!/usr/bin/python
 
 from __future__ import print_function
-import os
-import subprocess
 import sys
 import time
 import pickle
@@ -34,8 +32,6 @@ FEATURE_SELECTION_K = 3
 GRID_SEARCH_SCORING = ['f1', 'recall', 'precision']
 GRID_SEARCH_FIT = 'f1'
 
-OUTPUT_LOG = open(CONFIG.EXPORT_LOG_FILENAME, 'w')
-
 # Used for printing test scores in meaningful colors
 # e.g. for 'accuracy'  1.0 to 0.8 is green, 0.8 to 0.6 is yellow,
 # and anything below 0.6 is red
@@ -46,15 +42,15 @@ SCORE_COLOR_THRESHOLDS = {
 
 # The algorithms to be evaluated and selected from
 ALGORITHMS = [
-    linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, max_iter=5, tol=None, random_state=RANDOM_STATE),
-    naive_bayes.GaussianNB(),
-    naive_bayes.BernoulliNB(),
+    # linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, max_iter=5, tol=None, random_state=RANDOM_STATE),
+    # naive_bayes.GaussianNB(),
+    # naive_bayes.BernoulliNB(),
     neighbors.KNeighborsClassifier(),
-    neighbors.NearestCentroid(),
-    linear_model.RidgeClassifier(random_state=RANDOM_STATE),
-    tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE),
-    tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
-    svm.LinearSVC(random_state=RANDOM_STATE),
+    # neighbors.NearestCentroid(),
+    # linear_model.RidgeClassifier(random_state=RANDOM_STATE),
+    # tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE),
+    # tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
+    # svm.LinearSVC(random_state=RANDOM_STATE),
     # ensemble.RandomForestClassifier(random_state=RANDOM_STATE),     # Time: ~00:02:22
     # svm.SVC(kernel='linear', C = 1.0, random_state=RANDOM_STATE),   # Time: ~00:
 ]
@@ -131,14 +127,16 @@ def decolor(*args):
 ### Always print
 def aprint(*args, **kwargs):
     cleaned_args = decolor(*args)
-    print(*cleaned_args, file=OUTPUT_LOG, **kwargs)
+    with open(CONFIG.EXPORT_LOG_FILENAME, 'a+') as output:
+        print(*cleaned_args, file=output, **kwargs)
     print(*args, **kwargs)
 
 
 ### Print if VERBOSE == True
 def vprint(*args, **kwargs):
     cleaned_args = decolor(*args)
-    print(*cleaned_args, file=OUTPUT_LOG, **kwargs)
+    with open(CONFIG.EXPORT_LOG_FILENAME, 'a+') as output:
+        print(*cleaned_args, file=output, **kwargs)
     if CONFIG.VERBOSE:
         print(*args, **kwargs)
 
@@ -146,7 +144,8 @@ def vprint(*args, **kwargs):
 ### Print to the stderr stream
 def eprint(*args, **kwargs):
     cleaned_args = decolor(*args)
-    print(*cleaned_args, file=OUTPUT_LOG, **kwargs)
+    with open(CONFIG.EXPORT_LOG_FILENAME, 'a+') as output:
+        print(*cleaned_args, file=output, **kwargs)
     try:
         print(colored(str(*args), "red"), file=sys.stderr, **kwargs)
     except:
@@ -345,20 +344,14 @@ def find_best_classifier(features, labels, features_list):
     return best_algo_index, best_model, best_metrics
 
 
-def save_files(clf, dataset, feature_list, should_export):
+def save_files(clf, dataset, feature_list):
     # Model
     with open(CONFIG.EXPORT_CLF_FILENAME, "w") as clf_outfile:
         pickle.dump(clf, clf_outfile)
-    if should_export:
-        gs_model_path = os.path.join(CONFIG.GS_PATH_PREFIX, 'model.pkl')
-        subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_CLF_FILENAME, gs_model_path], stderr=sys.stdout)
 
     # Dataset
     with open(CONFIG.EXPORT_DATASET_FILENAME, "w") as dataset_outfile:
         pickle.dump(dataset, dataset_outfile)
-    if should_export:
-        gs_dataset_path = os.path.join(CONFIG.GS_PATH_PREFIX, 'dataset.pkl')
-        subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_DATASET_FILENAME, gs_dataset_path], stderr=sys.stdout)
 
     # Feature List
     with open("output/feature_list.pkl", "w") as featurelist_pickle:
@@ -366,9 +359,6 @@ def save_files(clf, dataset, feature_list, should_export):
     with open(CONFIG.EXPORT_FEATURE_LIST_FILENAME, "w") as featurelist_outfile:
         for f in feature_list:
             featurelist_outfile.write(f + "\n")
-    if should_export:
-        gs_feature_list_path = os.path.join(CONFIG.GS_PATH_PREFIX, 'feature_list.txt')
-        subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_FEATURE_LIST_FILENAME, gs_feature_list_path], stderr=sys.stdout)
 
 
 ### Main Method
@@ -472,7 +462,7 @@ def main():
         aprint("Retraining final model for export...\n")
         clf = best_model.fit(features, labels)
         aprint("Saving...")
-        save_files(clf, my_dataset, features_list, CONFIG.EXPORT_TO_GCP)
+        save_files(clf, my_dataset, features_list)
         aprint("Done!")
 
 
@@ -487,8 +477,3 @@ if __name__ == '__main__':
     main()
     elapsed_time = time.time() - main_start_time
     aprint("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
-
-OUTPUT_LOG.close()
-if CONFIG.EXPORT_TO_GCP:
-    gs_log_path = os.path.join(CONFIG.GS_PATH_PREFIX, 'log.txt')
-    subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_LOG_FILENAME, gs_log_path], stderr=sys.stdout)

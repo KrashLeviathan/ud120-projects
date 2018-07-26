@@ -1,11 +1,4 @@
-import datetime
-import os
-
 VERBOSE = False
-EXPORT_TO_GCP = True
-BUCKET_ID = "adept-elf-206419-mlengine"
-GS_PATH_PREFIX = os.path.join('gs://', BUCKET_ID,
-                              datetime.datetime.now().strftime('enron_poi_classifier_%Y%m%d_%H%M%S'))
 
 DATASET_DICTIONARY_FILE = "resources/final_project_dataset.pkl"
 
