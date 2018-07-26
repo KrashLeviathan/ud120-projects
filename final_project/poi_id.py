@@ -1,7 +1,6 @@
 #!/usr/bin/python
 
 from __future__ import print_function
-import datetime
 import os
 import subprocess
 import sys
@@ -19,22 +18,15 @@ from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.decomposition import PCA
 # from sklearn.preprocessing import MinMaxScaler
 import warnings
-
-warnings.filterwarnings("ignore")
-# sys.path.append("../tools/")
 from feature_format import feature_format
+
 
 #############################################################################
 #####################        Start Configuration        #####################
 #############################################################################
 
-VERBOSE = False
-EXPORT_TO_GCP = True
-BUCKET_ID = "adept-elf-206419-mlengine"
-GS_PATH_PREFIX = os.path.join('gs://', BUCKET_ID,
-                              datetime.datetime.now().strftime('enron_poi_classifier_%Y%m%d_%H%M%S'))
+import common_configs as CONFIG
 
-DATASET_DICTIONARY_FILE = "resources/final_project_dataset.pkl"
 PCA_EXPLAINED_VARIANCE_THRESHOLD = 0.05
 PCA_FEATURE_CONTRIBUTION_THRESHOLD = 0.2
 RANDOM_STATE = random.randint(0, 2 ** 32 - 1)
@@ -42,12 +34,7 @@ FEATURE_SELECTION_K = 3
 GRID_SEARCH_SCORING = ['f1', 'recall', 'precision']
 GRID_SEARCH_FIT = 'f1'
 
-EXPORT_LOG_FILENAME = "output/log.txt"
-EXPORT_CLF_FILENAME = "output/model.pkl"
-EXPORT_DATASET_FILENAME = "output/dataset.pkl"
-EXPORT_FEATURE_LIST_FILENAME = "output/feature_list.txt"
-
-OUTPUT_LOG = open(EXPORT_LOG_FILENAME, 'w')
+OUTPUT_LOG = open(CONFIG.EXPORT_LOG_FILENAME, 'w')
 
 # Used for printing test scores in meaningful colors
 # e.g. for 'accuracy'  1.0 to 0.8 is green, 0.8 to 0.6 is yellow,
@@ -152,7 +139,7 @@ def aprint(*args, **kwargs):
 def vprint(*args, **kwargs):
     cleaned_args = decolor(*args)
     print(*cleaned_args, file=OUTPUT_LOG, **kwargs)
-    if VERBOSE:
+    if CONFIG.VERBOSE:
         print(*args, **kwargs)
 
 
@@ -360,28 +347,28 @@ def find_best_classifier(features, labels, features_list):
 
 def save_files(clf, dataset, feature_list, should_export):
     # Model
-    with open(EXPORT_CLF_FILENAME, "w") as clf_outfile:
+    with open(CONFIG.EXPORT_CLF_FILENAME, "w") as clf_outfile:
         pickle.dump(clf, clf_outfile)
     if should_export:
-        gs_model_path = os.path.join(GS_PATH_PREFIX, 'model.pkl')
-        subprocess.check_call(['gsutil', 'cp', EXPORT_CLF_FILENAME, gs_model_path], stderr=sys.stdout)
+        gs_model_path = os.path.join(CONFIG.GS_PATH_PREFIX, 'model.pkl')
+        subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_CLF_FILENAME, gs_model_path], stderr=sys.stdout)
 
     # Dataset
-    with open(EXPORT_DATASET_FILENAME, "w") as dataset_outfile:
+    with open(CONFIG.EXPORT_DATASET_FILENAME, "w") as dataset_outfile:
         pickle.dump(dataset, dataset_outfile)
     if should_export:
-        gs_dataset_path = os.path.join(GS_PATH_PREFIX, 'dataset.pkl')
-        subprocess.check_call(['gsutil', 'cp', EXPORT_DATASET_FILENAME, gs_dataset_path], stderr=sys.stdout)
+        gs_dataset_path = os.path.join(CONFIG.GS_PATH_PREFIX, 'dataset.pkl')
+        subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_DATASET_FILENAME, gs_dataset_path], stderr=sys.stdout)
 
     # Feature List
     with open("output/feature_list.pkl", "w") as featurelist_pickle:
         pickle.dump(feature_list, featurelist_pickle)
-    with open(EXPORT_FEATURE_LIST_FILENAME, "w") as featurelist_outfile:
+    with open(CONFIG.EXPORT_FEATURE_LIST_FILENAME, "w") as featurelist_outfile:
         for f in feature_list:
             featurelist_outfile.write(f + "\n")
     if should_export:
-        gs_feature_list_path = os.path.join(GS_PATH_PREFIX, 'feature_list.txt')
-        subprocess.check_call(['gsutil', 'cp', EXPORT_FEATURE_LIST_FILENAME, gs_feature_list_path], stderr=sys.stdout)
+        gs_feature_list_path = os.path.join(CONFIG.GS_PATH_PREFIX, 'feature_list.txt')
+        subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_FEATURE_LIST_FILENAME, gs_feature_list_path], stderr=sys.stdout)
 
 
 ### Main Method
@@ -399,7 +386,7 @@ def main():
                                                                                          features_list))
 
     ### Load the dictionary containing the dataset
-    with open(DATASET_DICTIONARY_FILE, "r") as data_file:
+    with open(CONFIG.DATASET_DICTIONARY_FILE, "r") as data_file:
         data_dict = pickle.load(data_file)
 
     ### Task 2: Remove outliers
@@ -485,7 +472,7 @@ def main():
         aprint("Retraining final model for export...\n")
         clf = best_model.fit(features, labels)
         aprint("Saving...")
-        save_files(clf, my_dataset, features_list, EXPORT_TO_GCP)
+        save_files(clf, my_dataset, features_list, CONFIG.EXPORT_TO_GCP)
         aprint("Done!")
 
 
@@ -493,6 +480,7 @@ def main():
 #########        End of Function Definition / Start Script        #########
 ###########################################################################
 
+warnings.filterwarnings("ignore")
 
 if __name__ == '__main__':
     main_start_time = time.time()
@@ -501,6 +489,6 @@ if __name__ == '__main__':
     aprint("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
 
 OUTPUT_LOG.close()
-if EXPORT_TO_GCP:
-    gs_log_path = os.path.join(GS_PATH_PREFIX, 'log.txt')
-    subprocess.check_call(['gsutil', 'cp', EXPORT_LOG_FILENAME, gs_log_path], stderr=sys.stdout)
+if CONFIG.EXPORT_TO_GCP:
+    gs_log_path = os.path.join(CONFIG.GS_PATH_PREFIX, 'log.txt')
+    subprocess.check_call(['gsutil', 'cp', CONFIG.EXPORT_LOG_FILENAME, gs_log_path], stderr=sys.stdout)
