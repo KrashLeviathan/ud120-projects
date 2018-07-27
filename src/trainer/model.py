@@ -61,8 +61,8 @@ ALGORITHMS = [
     tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE),
     tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
     svm.LinearSVC(random_state=RANDOM_STATE),
-    # ensemble.RandomForestClassifier(random_state=RANDOM_STATE),     # Time: ~00:02:22
-    # svm.SVC(kernel='linear', C = 1.0, random_state=RANDOM_STATE),   # Time: ~00:
+    # ensemble.RandomForestClassifier(random_state=RANDOM_STATE),     # Time:  00:02:22
+    # svm.SVC(kernel='linear', C = 1.0, random_state=RANDOM_STATE),   # Time:  ........? (long time)
 ]
 
 # Defines the parameters that GridSearchCV will use for each algorithm tested

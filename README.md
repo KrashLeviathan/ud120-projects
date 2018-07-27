@@ -39,7 +39,7 @@ git clone https://github.com/KrashLeviathan/ud120-projects.git
 
 ```bash
 conda create --yes -n ud120 python=2.7 \
-    pip numpy termcolor sklearn scipy tensorflow
+    pip numpy termcolor scikit-learn scipy tensorflow
 source activate ud120
 pip install --upgrade pip
 ```
@@ -60,10 +60,12 @@ python -m trainer.task
 
 #### 5. Train and deploy the model in Google Cloud ML Engine
 
-Make sure to read the resources listed above about training/deploying a model
-to the cloud. There are certain requirements that must be met that aren't listed
-here. For example, the storage bucket must be regional (NOT multi-region), and you
-must set permissions for the Cloud ML Engine service to access the bucket.
+Make sure the [Google Cloud SDK](https://cloud.google.com/sdk/install) is installed
+and configured for your Google Cloud Platform instance. You also need to create a
+regional storage bucket, enable the appropriate APIs, set permissions, etc. Rather than diving
+into how to do all that, I'll let you use the resources listed above to read about all
+the GCP requirements for using ML Engine.
+
 
 ```bash
 ./tools/cmle-train.sh
