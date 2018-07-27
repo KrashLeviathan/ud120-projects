@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
 from __future__ import print_function
+from tensorflow.python.lib.io import file_io
+# import io
 import os
 import sys
 import time
@@ -18,7 +20,7 @@ from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.decomposition import PCA
 # from sklearn.preprocessing import MinMaxScaler
 import warnings
-from src.feature_format import feature_format
+from feature_format import feature_format
 
 #############################################################################
 #####################        Start Configuration        #####################
@@ -30,6 +32,7 @@ import common_configs as CONFIG
 ###   These two configs are set in the task.py file:   ###
 ##########################################################
 VERBOSE = False
+COLORED_OUTPUT = True
 OUTPUT_DIR = './output'
 ##########################################################
 
@@ -136,37 +139,58 @@ def decolor(*args):
 def aprint(*args, **kwargs):
     cleaned_args = decolor(*args)
     try:
-        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME), 'a+') as output:
-            print(*cleaned_args, file=output, **kwargs)
+        filename = os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME)
+        # with open(filename, 'a+') as output:
+        #     print(*cleaned_args, file=output, **kwargs)
+        with file_io.FileIO(filename, 'a+') as output:
+            output.write(*cleaned_args, **kwargs)
+            output.write("\n")
     except:
         pass
-    print(*args, **kwargs)
+
+    if COLORED_OUTPUT:
+        print(*args, **kwargs)
+    else:
+        print(*cleaned_args)
 
 
 ### Print if VERBOSE == True
 def vprint(*args, **kwargs):
     cleaned_args = decolor(*args)
     try:
-        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME), 'a+') as output:
-            print(*cleaned_args, file=output, **kwargs)
+        filename = os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME)
+        # with open(filename, 'a+') as output:
+        #     print(*cleaned_args, file=output, **kwargs)
+        with file_io.FileIO(filename, 'a+') as output:
+            output.write(*cleaned_args, **kwargs)
+            output.write("\n")
     except:
         pass
+
     if VERBOSE:
-        print(*args, **kwargs)
+        if COLORED_OUTPUT:
+            print(*args, **kwargs)
+        else:
+            print(*cleaned_args)
 
 
 ### Print to the stderr stream
 def eprint(*args, **kwargs):
     cleaned_args = decolor(*args)
     try:
-        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME), 'a+') as output:
-            print(*cleaned_args, file=output, **kwargs)
+        filename = os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME)
+        # with open(filename, 'a+') as output:
+        #     print(*cleaned_args, file=output, **kwargs)
+        with file_io.FileIO(filename, 'a+') as output:
+            output.write(*cleaned_args, **kwargs)
+            output.write("\n")
     except:
         pass
-    try:
-        print(colored(str(*args), "red"), file=sys.stderr, **kwargs)
-    except:
+
+    if COLORED_OUTPUT:
         print(*args, file=sys.stderr, **kwargs)
+    else:
+        print(*cleaned_args, file=sys.stderr)
 
 
 ### Used to print a score (float) in green, yellow, or red based on
@@ -336,7 +360,6 @@ def find_best_classifier(features, labels, features_list):
     best_metrics = {"accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0}
     for index, algorithm in enumerate(ALGORITHMS):
         my_start_time = time.time()
-        aprint(datetime.datetime.now().strftime('Starting time: %Y-%m-%d %H:%M:%S'))
         aprint(colored(str(algorithm).split('(')[0], 'white', attrs=['bold']))
 
         # Use GridSearchCV to tune the model
@@ -363,34 +386,32 @@ def find_best_classifier(features, labels, features_list):
 
 
 def save_files(clf, dataset, feature_list):
-    # Model
-    try:
-        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_CLF_FILENAME), "w") as clf_outfile:
-            pickle.dump(clf, clf_outfile)
-    except IOError as e:
-        eprint(e)
+    things_to_save = {}
+    things_to_save[os.path.join(OUTPUT_DIR, CONFIG.EXPORT_CLF_FILENAME)] = clf
+    things_to_save[os.path.join(OUTPUT_DIR, CONFIG.EXPORT_DATASET_FILENAME)] = dataset
+    things_to_save[os.path.join(OUTPUT_DIR, CONFIG.EXPORT_FEATURE_LIST_FILENAME)] = feature_list
 
-    # Dataset
-    try:
-        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_DATASET_FILENAME), "w") as dataset_outfile:
-            pickle.dump(dataset, dataset_outfile)
-    except IOError as e:
-        eprint(e)
-
-    # Feature List
-    try:
-        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_FEATURE_LIST_FILENAME + ".pkl"), "w") as featurelist_pickle:
-            pickle.dump(feature_list, featurelist_pickle)
-        with open(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_FEATURE_LIST_FILENAME), "w") as featurelist_outfile:
-            for f in feature_list:
-                featurelist_outfile.write(f + "\n")
-    except IOError as e:
-        eprint(e)
+    for filename in things_to_save:
+        try:
+            thing = things_to_save[filename]
+            with file_io.FileIO(filename, 'w') as outfile:
+                pickle.dump(thing, outfile)
+        except Exception as e:
+            eprint(e)
 
 
 ### Main Method
 def train_and_evaluate(train_data_path):
     main_start_time = time.time()
+    # Write to the log file with the start time. We don't use the aprint method
+    # here because we want the file to be overwritten if it already existed before
+    try:
+        with file_io.FileIO(os.path.join(OUTPUT_DIR, CONFIG.EXPORT_LOG_FILENAME), 'w+') as output:
+            output.write(datetime.datetime.now().strftime('Starting time: %Y-%m-%d %H:%M:%S'))
+            output.write("\n")
+    except Exception as e:
+        eprint(e)
+    print(datetime.datetime.now().strftime('Starting time: %Y-%m-%d %H:%M:%S'))
 
     # Print random state that will be used in all calculations
     vprint("\nRandom State: {}\n".format(RANDOM_STATE))
@@ -407,9 +428,10 @@ def train_and_evaluate(train_data_path):
     ### Load the dictionary containing the dataset
     data_dict = {}
     try:
-        with open(train_data_path, "r") as data_file:
+        with file_io.FileIO(train_data_path, 'r') as data_file:
             data_dict = pickle.load(data_file)
-    except IOError as e:
+    except Exception as e:
+        # Exiting with a message returns exit code 1
         exit(colored(e, 'red'))
 
     ### Task 2: Remove outliers

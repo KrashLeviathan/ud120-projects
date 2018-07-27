@@ -14,7 +14,7 @@ from __future__ import print_function
 
 import pickle
 from sklearn.model_selection import StratifiedShuffleSplit
-from src.feature_format.feature_format import featureFormat, targetFeatureSplit
+from feature_format.feature_format import featureFormat, targetFeatureSplit
 
 PERF_FORMAT_STRING = "\
 \tAccuracy: {:>0.{display_precision}f}\tPrecision: {:>0.{display_precision}f}\t\
