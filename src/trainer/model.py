@@ -1,26 +1,25 @@
 #!/usr/bin/python
 
 from __future__ import print_function
-from tensorflow.python.lib.io import file_io
-# import io
-import os
-import sys
-import time
+
 import datetime
+import os
 import pickle
 import re
+import sys
+import time
+import warnings
+
+from feature_format import feature_format
 from numpy import random
-from termcolor import colored
-# from sklearn import svm
+from sklearn import ensemble, svm, naive_bayes, linear_model, tree, neighbors
+from sklearn.decomposition import PCA
+from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.model_selection import GridSearchCV, StratifiedShuffleSplit
 from sklearn.pipeline import Pipeline
-from sklearn import svm, naive_bayes, linear_model, tree, neighbors
-# from sklearn import ensemble
-from sklearn.feature_selection import SelectKBest, f_classif
-from sklearn.decomposition import PCA
 # from sklearn.preprocessing import MinMaxScaler
-import warnings
-from feature_format import feature_format
+from tensorflow.python.lib.io import file_io
+from termcolor import colored
 
 #############################################################################
 #####################        Start Configuration        #####################
@@ -53,15 +52,15 @@ SCORE_COLOR_THRESHOLDS = {
 
 # The algorithms to be evaluated and selected from
 ALGORITHMS = [
-    # linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, max_iter=5, tol=None, random_state=RANDOM_STATE),
-    # naive_bayes.GaussianNB(),
-    # naive_bayes.BernoulliNB(),
+    linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, max_iter=5, tol=None, random_state=RANDOM_STATE),
+    naive_bayes.GaussianNB(),
+    naive_bayes.BernoulliNB(),
     neighbors.KNeighborsClassifier(),
-    # neighbors.NearestCentroid(),
-    # linear_model.RidgeClassifier(random_state=RANDOM_STATE),
-    # tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE),
-    # tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
-    # svm.LinearSVC(random_state=RANDOM_STATE),
+    neighbors.NearestCentroid(),
+    linear_model.RidgeClassifier(random_state=RANDOM_STATE),
+    tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE),
+    tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
+    svm.LinearSVC(random_state=RANDOM_STATE),
     # ensemble.RandomForestClassifier(random_state=RANDOM_STATE),     # Time: ~00:02:22
     # svm.SVC(kernel='linear', C = 1.0, random_state=RANDOM_STATE),   # Time: ~00:
 ]

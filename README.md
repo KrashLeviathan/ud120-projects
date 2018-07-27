@@ -1,5 +1,30 @@
 ## ud120-projects
 
+This code was originally part of the final project for the Udacity course
+[Intro to Machine Learning (ud120)](https://www.udacity.com/course/intro-to-machine-learning--ud120).
+After completing the course, I wanted to operationalize the model to learn a
+bit more about Google's [Cloud Machine Learning Engine](https://cloud.google.com/ml-engine/).
+This repository contains scripts to train and deploy the model to Cloud ML Engine.
+
+At time of writing, the ability to deploy a [scikit-learn](http://scikit-learn.org/stable/)
+model to Cloud ML Engine is still in beta. It doesn't have the GUI support that tensorflow does,
+but you can still train and deploy models via the `gcloud` command line application.
+
+Relevant documentation that I used can be found at the following locations:
+
+- [Original Udacity project files for ud120](https://github.com/udacity/ud120-projects)
+- [Training with scikit-learn and XGBoost](https://cloud.google.com/ml-engine/docs/scikit/getting-started-training)
+- [How to train Machine Learning models in the cloud using Cloud ML Engine](https://towardsdatascience.com/how-to-train-machine-learning-models-in-the-cloud-using-cloud-ml-engine-3f0d935294b3)
+- [Cloud ML Engine -> Documentation -> scikit-learn & XGBoost](https://cloud.google.com/ml-engine/docs/scikit/)
+  - [Packaging a Training Application](https://cloud.google.com/ml-engine/docs/scikit/packaging-trainer)
+  - [Running a Training Job](https://cloud.google.com/ml-engine/docs/scikit/training-jobs)
+  - [Deploying Models](https://cloud.google.com/ml-engine/docs/scikit/deploying-models)
+  - [Working with Cloud Storage](https://cloud.google.com/ml-engine/docs/scikit/working-with-cloud-storage)
+- [Stack Overflow - 'No such file or directory' error after submitting a training job](https://stackoverflow.com/questions/39775417/no-such-file-or-directory-error-after-submitting-a-training-job)
+- [Stack Overflow - Google Storage (gs) wrapper file input/output for CLoud ML?](https://stackoverflow.com/questions/40396552/google-storage-gs-wrapper-file-input-out-for-cloud-ml)
+- [GitHub - cloudml-samples](https://github.com/GoogleCloudPlatform/cloudml-samples)
+
+
 ### Getting started
 
 #### 1. Clone the project
@@ -14,7 +39,7 @@ git clone https://github.com/KrashLeviathan/ud120-projects.git
 
 ```bash
 conda create --yes -n ud120 python=2.7 \
-    pip numpy termcolor sklearn scipy
+    pip numpy termcolor sklearn scipy tensorflow
 source activate ud120
 pip install --upgrade pip
 ```
@@ -34,6 +59,11 @@ python -m trainer.task
 ```
 
 #### 5. Train and deploy the model in Google Cloud ML Engine
+
+Make sure to read the resources listed above about training/deploying a model
+to the cloud. There are certain requirements that must be met that aren't listed
+here. For example, the storage bucket must be regional (NOT multi-region), and you
+must set permissions for the Cloud ML Engine service to access the bucket.
 
 ```bash
 ./tools/cmle-train.sh
