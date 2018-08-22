@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 import argparse
-import model
+import trainer.model as model
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
