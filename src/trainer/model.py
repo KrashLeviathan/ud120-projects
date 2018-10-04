@@ -12,7 +12,6 @@ from numpy import random
 from sklearn import svm, naive_bayes, linear_model, tree, neighbors
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.model_selection import GridSearchCV, StratifiedShuffleSplit
-from sklearn.pipeline import Pipeline
 from tensorflow.python.lib.io import file_io
 
 #############################################################################
@@ -32,26 +31,18 @@ FEATURE_SELECTION_K = 3
 GRID_SEARCH_SCORING = ['f1', 'recall', 'precision']
 GRID_SEARCH_FIT = 'f1'
 
-# Used for printing test scores in meaningful colors
-# e.g. for 'accuracy'  1.0 to 0.8 is green, 0.8 to 0.6 is yellow,
-# and anything below 0.6 is red
-SCORE_COLOR_THRESHOLDS = {
-    'accuracy': [0.8, 0.6],
-    'other': [0.3, 0.2]
-}
-
 # The algorithms to be evaluated and selected from
-ALGORITHMS = [
-    linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, max_iter=5, tol=None, random_state=RANDOM_STATE),
-    naive_bayes.GaussianNB(),
-    naive_bayes.BernoulliNB(),
-    neighbors.KNeighborsClassifier(),
-    neighbors.NearestCentroid(),
-    linear_model.RidgeClassifier(random_state=RANDOM_STATE),
-    tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE),
-    tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
-    svm.LinearSVC(random_state=RANDOM_STATE)
-]
+ALGORITHMS = {
+    'SGDClassifier': linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=1e-3, max_iter=5, tol=None, random_state=RANDOM_STATE),
+    'GaussianNB': naive_bayes.GaussianNB(),
+    'BernoulliNB': naive_bayes.BernoulliNB(),
+    'KNeighborsClassifier': neighbors.KNeighborsClassifier(),
+    'NearestCentroid': neighbors.NearestCentroid(),
+    'RidgeClassifier': linear_model.RidgeClassifier(random_state=RANDOM_STATE),
+    'DecisionTreeClassifier': tree.DecisionTreeClassifier(max_depth=1000, random_state=RANDOM_STATE),
+    'ExtraTreeClassifier': tree.ExtraTreeClassifier(random_state=RANDOM_STATE),
+    'LinearSVC': svm.LinearSVC(random_state=RANDOM_STATE)
+}
 
 # Defines the parameters that GridSearchCV will use for each algorithm tested
 TREE_TYPE_PARAMS = {
@@ -120,8 +111,7 @@ def eprint(*args, **kwargs):
 
 ### Prints the model, model parameters, and metrics
 def report(clf, score):
-    print('  Parameters: (' + '('.join(str(x) for x in str(clf).split('(')[1:]),
-          "\n")
+    print(clf, "\n")
     print("  Accuracy: ", score["accuracy"], " \t",
           "F1 Score: ", score["f1_score"], " \t",
           "Recall: ", score["recall"], "   \t",
@@ -184,21 +174,11 @@ def test_classifier(clf, features, labels, folds=1000):
 
 
 ### Uses GridSearchCV to automatically tune the algorithm.
-def train(algorithm, feature_data, target_data, print_best_params=False):
-    algo_name = str(algorithm).split('(')[0]
-    pipe = Pipeline([
-        ('algorithm', algorithm)
-    ])
-    pipe_params = {}
-    # noinspection PyCompatibility
-    for key, value in PARAM_GRID[algo_name].items():
-        pipe_params['algorithm__' + key] = value
-    # model = GridSearchCV(pipe, param_grid=PARAM_GRID[algo_name], cv=5, scoring=GRID_SEARCH_SCORING, refit=GRID_SEARCH_FIT, n_jobs=1, error_score=0)
-    model = GridSearchCV(pipe, param_grid=pipe_params, cv=5, scoring=GRID_SEARCH_SCORING, refit=GRID_SEARCH_FIT,
+def train(algo_name, feature_data, target_data):
+    algorithm = ALGORITHMS[algo_name]
+    model = GridSearchCV(algorithm, param_grid=PARAM_GRID[algo_name], cv=5, scoring=GRID_SEARCH_SCORING, refit=GRID_SEARCH_FIT,
                          n_jobs=-1, error_score=0)
     model.fit(feature_data, target_data)
-    if print_best_params:
-        print("Best params for {}: {}\n".format(algo_name, model.best_params_))
     return model
 
 
@@ -235,15 +215,15 @@ def selectkbest_features_list_revision(features, labels, features_list):
 ### Tunes, trains, and evaluates each model based on the precision, recall,
 ### and f1 scores. Returns the best model that meets the specifications.
 def find_best_classifier(features, labels):
-    best_algo_index = -1
+    best_algo_name = ''
     best_model = None
     best_metrics = {"accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0}
-    for index, algorithm in enumerate(ALGORITHMS):
+    for name, algorithm in ALGORITHMS.items():
         my_start_time = time.time()
-        print(str(algorithm).split('(')[0])
+        print(name)
 
         # Use GridSearchCV to tune the model
-        clf = train(algorithm, features, labels).best_estimator_
+        clf = train(name, features, labels).best_estimator_
 
         # Evaluate the model, pulling relevant metrics
         algo_metrics = test_classifier(clf, features, labels)
@@ -257,12 +237,12 @@ def find_best_classifier(features, labels):
             # Update the "current best" model for output at the end
             best_metrics, is_new_best = metrics_max(best_metrics, algo_metrics)
             if is_new_best:
-                best_algo_index = index
+                best_algo_name = name
                 best_model = clf
         else:
             eprint("Test classifier failed!")
 
-    return best_algo_index, best_model, best_metrics
+    return best_algo_name, best_model, best_metrics
 
 
 def save_files(clf, dataset, feature_list):
@@ -365,7 +345,7 @@ def train_and_evaluate(train_data_path):
     print("GridSearchCV Scoring Metric:", GRID_SEARCH_SCORING)
     print("GridSearchCV Fit Metric:", GRID_SEARCH_FIT, "\n")
 
-    best_algo_index, best_model, best_metrics = find_best_classifier(features, labels)
+    best_algo_name, best_model, best_metrics = find_best_classifier(features, labels)
 
     ### Task 6: Dump your classifier, dataset, and features_list so anyone can
     ### check your results. You do not need to change anything below, but make sure
@@ -374,13 +354,13 @@ def train_and_evaluate(train_data_path):
 
     # To make sure we get the best "final" model, train on ALL the data
     print("\n################## FINAL MODEL SELECTION ##################\n")
-    if best_algo_index < 0:
+    if best_algo_name == '':
         elapsed_time = time.time() - main_start_time
         print(datetime.datetime.now().strftime('Ending time: %Y-%m-%d %H:%M:%S'))
         print("Total elapsed time:", time.strftime("%H:%M:%S", time.gmtime(elapsed_time)))
         sys.exit("None of the models qualified! None achieved precision >= 0.3 and recall >= 0.3\n")
     else:
-        print(str(ALGORITHMS[best_algo_index]).split('(')[0])
+        print(best_algo_name)
         report(best_model, best_metrics)
         print("\nFinal feature list after selection:  (", len(features_list), "features )\n", features_list, "\n")
 
